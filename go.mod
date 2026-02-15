@@ -1,4 +1,4 @@
-module github.com/AndroidPoet/gpc
+module github.com/AndroidPoet/playconsole-cli
 
 go 1.25.6
 

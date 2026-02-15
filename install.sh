@@ -1,10 +1,10 @@
 #!/bin/bash
-# gpc - Google Play Console CLI installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/AndroidPoet/gpc/main/install.sh | bash
+# playconsole-cli - Google Play Console CLI installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
 
 set -e
 
-REPO="${GPC_REPO:-AndroidPoet/gpc}"
+REPO="${GPC_REPO:-AndroidPoet/playconsole-cli}"
 INSTALL_DIR="${GPC_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${GPC_VERSION:-latest}"
 
@@ -35,7 +35,7 @@ case "$ARCH" in
     *) error "Unsupported architecture: $ARCH" ;;
 esac
 
-info "Installing gpc for ${OS}/${ARCH}..."
+info "Installing playconsole-cli for ${OS}/${ARCH}..."
 
 # GitHub API headers
 AUTH_HEADER=""
@@ -59,7 +59,7 @@ else
 fi
 
 # Find asset for this platform
-ASSET_NAME="gpc_.*_${OS}_${ARCH}"
+ASSET_NAME="playconsole-cli_.*_${OS}_${ARCH}"
 if [ "$OS" = "windows" ]; then
     ASSET_NAME="${ASSET_NAME}.zip"
 else
@@ -80,15 +80,15 @@ if [ -z "$DOWNLOAD_URL" ]; then
     cd "$TMPDIR"
 
     if [ -n "$GITHUB_TOKEN" ]; then
-        git clone "https://${GITHUB_TOKEN}@github.com/${REPO}.git" gpc
+        git clone "https://${GITHUB_TOKEN}@github.com/${REPO}.git" playconsole-cli
     else
-        git clone "https://github.com/${REPO}.git" gpc
+        git clone "https://github.com/${REPO}.git" playconsole-cli
     fi
 
-    cd gpc
-    go build -o gpc ./cmd/gpc
+    cd playconsole-cli
+    go build -o playconsole-cli ./cmd/playconsole-cli
     mkdir -p "$INSTALL_DIR"
-    mv gpc "$INSTALL_DIR/gpc"
+    mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
     cd /
     rm -rf "$TMPDIR"
 else
@@ -112,15 +112,15 @@ else
 
     # Install
     mkdir -p "$INSTALL_DIR"
-    mv gpc "$INSTALL_DIR/gpc"
+    mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
 
     cd /
     rm -rf "$TMPDIR"
 fi
 
-chmod +x "$INSTALL_DIR/gpc"
+chmod +x "$INSTALL_DIR/playconsole-cli"
 
-info "Installed gpc to $INSTALL_DIR/gpc"
+info "Installed playconsole-cli to $INSTALL_DIR/playconsole-cli"
 
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^$INSTALL_DIR$"; then
@@ -131,10 +131,10 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^$INSTALL_DIR$"; then
 fi
 
 # Verify installation
-if "$INSTALL_DIR/gpc" version &>/dev/null; then
+if "$INSTALL_DIR/playconsole-cli" version &>/dev/null; then
     info "Installation complete!"
     echo ""
-    "$INSTALL_DIR/gpc" version
+    "$INSTALL_DIR/playconsole-cli" version
 else
-    warn "Installed but could not verify. Try running: $INSTALL_DIR/gpc --help"
+    warn "Installed but could not verify. Try running: $INSTALL_DIR/playconsole-cli --help"
 fi

@@ -1,4 +1,4 @@
-# gpc
+# playconsole-cli
 
 A fast, lightweight, and scriptable CLI for Google Play Console.
 
@@ -10,13 +10,13 @@ Inspired by [App Store Connect CLI](https://github.com/rudrankriyam/App-Store-Co
 
 ```bash
 brew tap AndroidPoet/tap
-brew install gpc
+brew install playconsole-cli
 ```
 
 ### Install Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AndroidPoet/gpc/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
 ```
 
 Installs to `~/.local/bin` by default (ensure it's in your PATH).
@@ -24,10 +24,10 @@ Installs to `~/.local/bin` by default (ensure it's in your PATH).
 ### From Source
 
 ```bash
-git clone https://github.com/AndroidPoet/gpc.git
-cd gpc
+git clone https://github.com/AndroidPoet/playconsole-cli.git
+cd playconsole-cli
 make build
-./bin/gpc --help
+./bin/playconsole-cli --help
 ```
 
 ## Setup
@@ -44,10 +44,10 @@ make build
 2. Link your Google Cloud project
 3. Grant your service account access to apps
 
-### 3. Configure gpc
+### 3. Configure playconsole-cli
 
 ```bash
-gpc auth login --name default --credentials /path/to/service-account.json
+playconsole-cli auth login --name default --credentials /path/to/service-account.json
 ```
 
 Or use environment variables:
@@ -82,70 +82,70 @@ export GPC_PACKAGE=com.example.app
 
 ```bash
 # Upload bundle to internal track
-gpc bundles upload --file app.aab --track internal
+playconsole-cli bundles upload --file app.aab --track internal
 
 # Promote to beta
-gpc tracks promote --from internal --to beta
+playconsole-cli tracks promote --from internal --to beta
 
 # Staged rollout to production (10%)
-gpc tracks update --track production --version-code 42 --rollout-percentage 10
+playconsole-cli tracks update --track production --version-code 42 --rollout-percentage 10
 
 # Complete rollout
-gpc tracks complete --track production
+playconsole-cli tracks complete --track production
 ```
 
 ### Manage Store Listing
 
 ```bash
 # List localizations
-gpc listings list
+playconsole-cli listings list
 
 # Update listing
-gpc listings update --locale en-US \
+playconsole-cli listings update --locale en-US \
   --title "My App" \
   --short-description "A great app"
 
 # Sync from directory (fastlane-compatible)
-gpc listings sync --dir ./metadata/
+playconsole-cli listings sync --dir ./metadata/
 ```
 
 ### Screenshots
 
 ```bash
 # Upload screenshot
-gpc images upload --locale en-US --type phoneScreenshots --file screenshot.png
+playconsole-cli images upload --locale en-US --type phoneScreenshots --file screenshot.png
 
 # Sync all images
-gpc images sync --dir ./screenshots/
+playconsole-cli images sync --dir ./screenshots/
 ```
 
 ### Reviews
 
 ```bash
 # List negative reviews
-gpc reviews list --min-rating 1 --max-rating 3
+playconsole-cli reviews list --min-rating 1 --max-rating 3
 
 # Reply to a review
-gpc reviews reply --review-id "abc123" --text "Thank you for your feedback!"
+playconsole-cli reviews reply --review-id "abc123" --text "Thank you for your feedback!"
 ```
 
 ### In-App Products
 
 ```bash
 # List products
-gpc products list
+playconsole-cli products list
 
 # Create product
-gpc products create --sku premium --title "Premium" --price-usd 4.99
+playconsole-cli products create --sku premium --title "Premium" --price-usd 4.99
 ```
 
 ## Output Formats
 
 ```bash
-gpc tracks list                    # JSON (default)
-gpc tracks list --pretty           # Pretty JSON
-gpc tracks list --output table     # Table format
-gpc tracks list --output tsv       # TSV for scripting
+playconsole-cli tracks list                    # JSON (default)
+playconsole-cli tracks list --pretty           # Pretty JSON
+playconsole-cli tracks list --output table     # Table format
+playconsole-cli tracks list --output tsv       # TSV for scripting
 ```
 
 ## Environment Variables
@@ -168,7 +168,7 @@ gpc tracks list --output tsv       # TSV for scripting
   env:
     GPC_CREDENTIALS_B64: ${{ secrets.PLAY_STORE_CREDENTIALS }}
   run: |
-    gpc bundles upload \
+    playconsole-cli bundles upload \
       --package com.example.app \
       --file app.aab \
       --track internal

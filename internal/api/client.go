@@ -10,7 +10,7 @@ import (
 	"google.golang.org/api/androidpublisher/v3"
 	"google.golang.org/api/option"
 
-	"github.com/AndroidPoet/gpc/internal/config"
+	"github.com/AndroidPoet/playconsole-cli/internal/config"
 )
 
 // Client wraps the Android Publisher API client

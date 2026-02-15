@@ -18,7 +18,7 @@ type Profile struct {
 	DefaultPackage  string `json:"default_package,omitempty"`
 }
 
-// Config represents the gpc configuration
+// Config represents the playconsole-cli configuration
 type Config struct {
 	DefaultProfile string             `json:"default_profile"`
 	Profiles       map[string]Profile `json:"profiles"`
@@ -41,7 +41,7 @@ func Init(cfgFile, profileName string) error {
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
-		configPath = filepath.Join(home, ".gpc", "config.json")
+		configPath = filepath.Join(home, ".playconsole-cli", "config.json")
 	}
 
 	// Load or create config
@@ -139,7 +139,7 @@ func SetDefaultProfile(name string) {
 // GetCredentials returns the service account credentials JSON
 func GetCredentials() ([]byte, error) {
 	if currentProfile == nil {
-		return nil, fmt.Errorf("no profile configured. Run 'gpc auth login' first")
+		return nil, fmt.Errorf("no profile configured. Run 'playconsole-cli auth login' first")
 	}
 
 	// Try base64 encoded credentials first
@@ -160,7 +160,7 @@ func GetCredentials() ([]byte, error) {
 		return data, nil
 	}
 
-	return nil, fmt.Errorf("no credentials configured for profile '%s'. Run 'gpc auth login' first", currentProfile.Name)
+	return nil, fmt.Errorf("no credentials configured for profile '%s'. Run 'playconsole-cli auth login' first", currentProfile.Name)
 }
 
 // SetDebug sets debug mode

@@ -1,7 +1,7 @@
-# gpc - Google Play Console CLI
+# playconsole-cli - Google Play Console CLI
 # Makefile for building, testing, and releasing
 
-BINARY_NAME=gpc
+BINARY_NAME=playconsole-cli
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -14,14 +14,14 @@ all: build
 ## Build
 
 build: ## Build the binary
-	go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/gpc
+	go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/playconsole-cli
 
 build-all: ## Build for all platforms
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-darwin-amd64 ./cmd/gpc
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-darwin-arm64 ./cmd/gpc
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux-amd64 ./cmd/gpc
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux-arm64 ./cmd/gpc
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-windows-amd64.exe ./cmd/gpc
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-darwin-amd64 ./cmd/playconsole-cli
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-darwin-arm64 ./cmd/playconsole-cli
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux-amd64 ./cmd/playconsole-cli
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux-arm64 ./cmd/playconsole-cli
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-windows-amd64.exe ./cmd/playconsole-cli
 
 install: build ## Install to $GOPATH/bin
 	cp bin/$(BINARY_NAME) $(GOPATH)/bin/$(BINARY_NAME)
