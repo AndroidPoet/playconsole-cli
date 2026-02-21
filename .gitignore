@@ -1,8 +1,8 @@
 # Binaries
 bin/
 dist/
-playconsole-cli
-gpc
+/playconsole-cli
+/gpc
 *.exe
 *.exe~
 *.dll
