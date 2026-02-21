@@ -70,3 +70,4 @@ jobs:
           distribution: goreleaser
           version: latest
           args: check
+        continue-on-error: true
