@@ -224,15 +224,6 @@ gpc tracks list --output tsv       # Tab-separated
 
 ---
 
-## 🧠 Design Philosophy
-
-1. **Explicit over clever** — No magic, clear intent
-2. **JSON-first** — Pipe to jq, grep, or your scripts
-3. **No prompts** — Works in CI without interaction
-4. **Clean exit codes** — 0 success, 1 error, 2 validation
-
----
-
 ## 🔒 Security
 
 - Credentials stored with `0600` permissions
