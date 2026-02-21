@@ -119,6 +119,28 @@ gpc subscriptions list                                 # Subscriptions
 gpc purchases verify --token "..." --product-id premium
 ```
 
+### 📊 Analytics & Vitals
+
+```bash
+gpc vitals overview                                    # Health summary
+gpc vitals crashes --days 7                            # Crash metrics
+gpc vitals anr --days 30                               # ANR metrics
+```
+
+### 📱 Devices
+
+```bash
+gpc devices list                                       # Supported devices
+gpc devices stats                                      # Device distribution
+```
+
+### 📈 Reports
+
+```bash
+gpc reports list                                       # Available reports
+gpc reports types                                      # Report type info
+```
+
 ### 🧪 Testing
 
 ```bash
@@ -217,6 +239,8 @@ gpc tracks list --output tsv       # Tab-separated
 - Service account keys never logged
 - Base64 encoding for CI/CD secrets
 - No credentials in command history
+
+> ⚠️ **SCAM WARNING:** There is **NO official cryptocurrency, token, or NFT** associated with Play Console CLI. Any tokens using this project's name are unauthorized scams. This is a free, open-source CLI tool — nothing more.
 
 ---
 
