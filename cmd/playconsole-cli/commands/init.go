@@ -14,6 +14,7 @@ import (
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/reports"
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/reviews"
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/setup"
+	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/stats"
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/subscriptions"
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/testing"
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/tracks"
@@ -41,4 +42,5 @@ func init() {
 	rootCmd.AddCommand(vitals.VitalsCmd)
 	rootCmd.AddCommand(devices.DevicesCmd)
 	rootCmd.AddCommand(reports.ReportsCmd)
+	rootCmd.AddCommand(stats.StatsCmd)
 }
