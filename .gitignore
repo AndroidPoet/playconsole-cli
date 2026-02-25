@@ -32,3 +32,9 @@ Thumbs.db
 
 # Config (local)
 .gpc/
+.gpc.yaml
+
+# AI tools
+.claude/
+.tldr/
+.tldrignore
