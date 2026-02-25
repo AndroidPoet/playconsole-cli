@@ -124,6 +124,31 @@ func (c *Client) Grants() *androidpublisher.GrantsService {
 	return c.service.Grants
 }
 
+// Orders returns the orders service
+func (c *Client) Orders() *androidpublisher.OrdersService {
+	return c.service.Orders
+}
+
+// ExternalTransactions returns the external transactions service
+func (c *Client) ExternalTransactions() *androidpublisher.ExternaltransactionsService {
+	return c.service.Externaltransactions
+}
+
+// AppRecovery returns the app recovery service
+func (c *Client) AppRecovery() *androidpublisher.ApprecoveryService {
+	return c.service.Apprecovery
+}
+
+// GeneratedAPKs returns the generated APKs service
+func (c *Client) GeneratedAPKs() *androidpublisher.GeneratedapksService {
+	return c.service.Generatedapks
+}
+
+// SystemAPKs returns the system APKs service
+func (c *Client) SystemAPKs() *androidpublisher.SystemapksService {
+	return c.service.Systemapks
+}
+
 // Edit represents an active edit session
 type Edit struct {
 	client  *Client

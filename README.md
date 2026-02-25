@@ -85,6 +85,8 @@ gpc tracks promote --from internal --to production --rollout 10
 
 ## 🎯 Commands
 
+**30 command groups, 80+ subcommands.** [Full reference →](docs/commands.md)
+
 ### 📤 Release Management
 
 ```bash
@@ -93,6 +95,7 @@ gpc tracks list                                        # List tracks
 gpc tracks promote --from internal --to beta           # Promote
 gpc tracks update --track production --rollout 50     # Staged rollout
 gpc tracks halt --track production                    # Emergency halt
+gpc deobfuscation upload --version-code 42 --file mapping.txt  # Crash symbolication
 ```
 
 ### 🏪 Store Presence
@@ -101,6 +104,7 @@ gpc tracks halt --track production                    # Emergency halt
 gpc listings sync --dir ./metadata/                   # Sync all listings
 gpc listings update --locale en-US --title "My App"   # Update listing
 gpc images sync --dir ./screenshots/                  # Sync screenshots
+gpc availability list --track production              # Country targeting
 ```
 
 ### ⭐ Reviews
@@ -116,15 +120,25 @@ gpc reviews list | jq '[.[] | select(.rating == 5)]' # Filter with jq
 ```bash
 gpc products list                                      # In-app products
 gpc subscriptions list                                 # Subscriptions
+gpc offers list --product-id sub_id --base-plan monthly # Subscription offers
 gpc purchases verify --token "..." --product-id premium
+gpc orders get --order-id GPA.1234                     # Order details
+gpc orders refund --order-id GPA.1234 --confirm        # Issue refund
+gpc external-transactions create --file tx.json        # Alternative billing
 ```
 
 ### 📊 Analytics & Vitals
 
 ```bash
 gpc vitals overview                                    # Health summary
-gpc vitals crashes --days 7                            # Crash metrics
-gpc vitals anr --days 30                               # ANR metrics
+gpc vitals crashes --days 7                            # Crash rate
+gpc vitals anr --days 28                               # ANR rate
+gpc vitals slow-start --days 28                        # Slow startup rate
+gpc vitals slow-rendering --days 28                    # Frame rendering
+gpc vitals wakeups --days 28                           # Battery: wakeup alarms
+gpc vitals wakelocks --days 28                         # Battery: stuck wakelocks
+gpc vitals memory --days 28                            # Low memory killer rate
+gpc vitals errors issues                               # Grouped error issues
 ```
 
 ### 📱 Devices
@@ -132,6 +146,7 @@ gpc vitals anr --days 30                               # ANR metrics
 ```bash
 gpc devices list                                       # Supported devices
 gpc devices stats                                      # Device distribution
+gpc device-tiers list                                  # Device tier configs
 ```
 
 ### 📈 Reports
@@ -153,6 +168,16 @@ gpc testing testers add --track beta --email "dev@company.com"
 ```bash
 gpc users list
 gpc users grant --email "dev@company.com" --role releaseManager
+```
+
+### 🛠️ Utilities
+
+```bash
+gpc doctor                                             # Validate setup
+gpc init --package com.example.app                     # Create project config
+gpc diff                                               # Compare draft vs live
+gpc recovery list                                      # App recovery actions
+gpc completion zsh > "${fpath[1]}/_gpc"                # Shell completions
 ```
 
 ---
@@ -209,7 +234,7 @@ base64 < service-account.json | xclip   # Linux
 | `GPC_CREDENTIALS_B64` | Base64-encoded credentials (CI) |
 | `GPC_PACKAGE` | Default package name |
 | `GPC_PROFILE` | Auth profile to use |
-| `GPC_OUTPUT` | Format: `json` \| `table` \| `tsv` |
+| `GPC_OUTPUT` | Format: `json` \| `table` \| `tsv` \| `csv` \| `yaml` |
 
 ---
 
@@ -218,8 +243,11 @@ base64 < service-account.json | xclip   # Linux
 ```bash
 gpc tracks list                    # JSON (default, for scripting)
 gpc tracks list --pretty           # Pretty JSON
-gpc tracks list --output table     # ASCII table
-gpc tracks list --output tsv       # Tab-separated
+gpc tracks list -o table           # ASCII table
+gpc tracks list -o tsv             # Tab-separated values
+gpc tracks list -o csv             # Comma-separated values
+gpc tracks list -o yaml            # YAML
+gpc tracks list -o minimal         # First field only (piping)
 ```
 
 ---

@@ -1,6 +1,7 @@
 package output
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"text/tabwriter"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Format represents the output format
@@ -18,6 +21,8 @@ const (
 	FormatTable   Format = "table"
 	FormatMinimal Format = "minimal"
 	FormatTSV     Format = "tsv"
+	FormatCSV     Format = "csv"
+	FormatYAML    Format = "yaml"
 )
 
 var (
@@ -50,6 +55,10 @@ func Print(data interface{}) error {
 		return printMinimal(data)
 	case FormatTSV:
 		return printTSV(data)
+	case FormatCSV:
+		return printCSV(data)
+	case FormatYAML:
+		return printYAML(data)
 	default:
 		return printJSON(data)
 	}
@@ -201,6 +210,54 @@ func printTSV(data interface{}) error {
 		return printJSON(data)
 	}
 
+	return nil
+}
+
+func printCSV(data interface{}) error {
+	w := csv.NewWriter(writer)
+	defer w.Flush()
+
+	v := reflect.ValueOf(data)
+
+	if v.Kind() == reflect.Slice {
+		if v.Len() == 0 {
+			return nil
+		}
+
+		// Print header
+		first := v.Index(0)
+		if first.Kind() == reflect.Ptr {
+			first = first.Elem()
+		}
+		headers := getStructHeaders(first)
+		if err := w.Write(headers); err != nil {
+			return fmt.Errorf("failed to write CSV header: %w", err)
+		}
+
+		// Print rows
+		for i := 0; i < v.Len(); i++ {
+			elem := v.Index(i)
+			if elem.Kind() == reflect.Ptr {
+				elem = elem.Elem()
+			}
+			values := getStructValues(elem)
+			if err := w.Write(values); err != nil {
+				return fmt.Errorf("failed to write CSV row: %w", err)
+			}
+		}
+	} else {
+		return printJSON(data)
+	}
+
+	return nil
+}
+
+func printYAML(data interface{}) error {
+	out, err := yaml.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+	fmt.Fprint(writer, string(out))
 	return nil
 }
 
