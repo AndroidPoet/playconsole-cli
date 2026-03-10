@@ -334,6 +334,69 @@ Using GPC to ship your app? Get featured here!
 
 ---
 
+## 🤖 Agent Skills
+
+Supercharge your coding agent with Play Console CLI skills. Works with [Claude Code](https://claude.ai/claude-code), [Cursor](https://cursor.sh), [Codex](https://openai.com/codex), and [37+ more agents](https://skills.sh).
+
+### Install All Skills
+
+```bash
+npx skills add AndroidPoet/playconsole-cli
+```
+
+### Install Specific Skills
+
+```bash
+# Release management (upload, tracks, promote, rollouts)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-release
+
+# Store presence (listings, images, availability)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-store
+
+# Reviews (list, filter, reply)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-reviews
+
+# Monetization (products, subscriptions, offers, orders)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-monetization
+
+# Vitals & analytics (crashes, ANR, performance, devices)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-vitals
+
+# Testing (internal sharing, testers, test tracks)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-testing
+
+# Setup & auth (authentication, config, doctor, team)
+npx skills add AndroidPoet/playconsole-cli --skill gpc-setup
+```
+
+### Install to a Specific Agent
+
+```bash
+npx skills add AndroidPoet/playconsole-cli -a claude-code
+npx skills add AndroidPoet/playconsole-cli -a cursor
+npx skills add AndroidPoet/playconsole-cli -a codex
+```
+
+### Install Globally
+
+```bash
+npx skills add AndroidPoet/playconsole-cli -g
+```
+
+### Available Skills
+
+| Skill | Description |
+|-------|-------------|
+| `gpc-release` | Upload bundles, manage tracks, promote releases, staged rollouts |
+| `gpc-store` | Store listings, screenshots, images, country availability |
+| `gpc-reviews` | List, filter, and reply to user reviews |
+| `gpc-monetization` | In-app products, subscriptions, offers, orders, refunds |
+| `gpc-vitals` | Crash rates, ANR, performance, battery, device stats |
+| `gpc-testing` | Internal sharing, testers, tester groups, test tracks |
+| `gpc-setup` | Authentication, project config, doctor, team management |
+
+---
+
 ## 🤝 Contributing
 
 PRs welcome! Please open an issue first to discuss major changes.
