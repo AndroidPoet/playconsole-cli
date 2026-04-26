@@ -214,7 +214,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	created, err := client.Monetization().Subscriptions.Create(client.GetPackageName(), &sub).ProductId(productID).Context(ctx).Do()
+	created, err := client.Monetization().Subscriptions.Create(client.GetPackageName(), &sub).ProductId(productID).RegionsVersionVersion("2022/02").Context(ctx).Do()
 	if err != nil {
 		return err
 	}
@@ -302,7 +302,7 @@ func runBasePlansCreate(cmd *cobra.Command, args []string) error {
 	sub.BasePlans = append(sub.BasePlans, &basePlan)
 
 	// Update subscription
-	updated, err := client.Monetization().Subscriptions.Patch(client.GetPackageName(), productID, sub).UpdateMask("basePlans").Context(ctx).Do()
+	updated, err := client.Monetization().Subscriptions.Patch(client.GetPackageName(), productID, sub).UpdateMask("basePlans").RegionsVersionVersion("2022/02").Context(ctx).Do()
 	if err != nil {
 		return err
 	}
