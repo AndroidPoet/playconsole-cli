@@ -97,7 +97,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default $HOME/.playconsole-cli/config.json)")
 	rootCmd.PersistentFlags().StringVarP(&packageName, "package", "p", "", "app package name (or GPC_PACKAGE env)")
 	rootCmd.PersistentFlags().StringVar(&profile, "profile", "", "auth profile name (or GPC_PROFILE env)")
-	rootCmd.PersistentFlags().StringVarP(&outputFmt, "output", "o", "json", "output format: json, table, minimal, tsv, csv, yaml")
+	rootCmd.PersistentFlags().StringVarP(&outputFmt, "output", "o", "json", "output format: json, table, minimal, tsv, csv, yaml, markdown")
 	rootCmd.PersistentFlags().BoolVar(&prettyPrint, "pretty", false, "pretty-print JSON output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "show API requests/responses")

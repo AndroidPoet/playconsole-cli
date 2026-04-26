@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -17,12 +18,13 @@ import (
 type Format string
 
 const (
-	FormatJSON    Format = "json"
-	FormatTable   Format = "table"
-	FormatMinimal Format = "minimal"
-	FormatTSV     Format = "tsv"
-	FormatCSV     Format = "csv"
-	FormatYAML    Format = "yaml"
+	FormatJSON     Format = "json"
+	FormatTable    Format = "table"
+	FormatMinimal  Format = "minimal"
+	FormatTSV      Format = "tsv"
+	FormatCSV      Format = "csv"
+	FormatYAML     Format = "yaml"
+	FormatMarkdown Format = "markdown"
 )
 
 var (
@@ -34,7 +36,7 @@ var (
 
 // Setup initializes the output formatter
 func Setup(format string, pretty, quiet bool) {
-	currentFormat = Format(format)
+	currentFormat = normalizeFormat(format)
 	prettyPrint = pretty
 	quietMode = quiet
 }
@@ -59,6 +61,8 @@ func Print(data interface{}) error {
 		return printCSV(data)
 	case FormatYAML:
 		return printYAML(data)
+	case FormatMarkdown:
+		return printMarkdown(data)
 	default:
 		return printJSON(data)
 	}
@@ -261,6 +265,112 @@ func printYAML(data interface{}) error {
 	return nil
 }
 
+func printMarkdown(data interface{}) error {
+	headers, rows, ok := markdownRows(data)
+	if !ok {
+		return printJSON(data)
+	}
+
+	if len(headers) == 0 {
+		fmt.Fprintln(writer, "(no results)")
+		return nil
+	}
+
+	fmt.Fprintf(writer, "| %s |\n", strings.Join(headers, " | "))
+	separator := make([]string, len(headers))
+	for i := range separator {
+		separator[i] = "---"
+	}
+	fmt.Fprintf(writer, "| %s |\n", strings.Join(separator, " | "))
+
+	for _, row := range rows {
+		fmt.Fprintf(writer, "| %s |\n", strings.Join(row, " | "))
+	}
+
+	return nil
+}
+
+func markdownRows(data interface{}) ([]string, [][]string, bool) {
+	v := reflect.ValueOf(data)
+	if !v.IsValid() {
+		return nil, nil, false
+	}
+
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil, nil, false
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.Slice:
+		if v.Len() == 0 {
+			return []string{"Result"}, [][]string{}, true
+		}
+
+		first := v.Index(0)
+		if first.Kind() == reflect.Ptr {
+			first = first.Elem()
+		}
+
+		switch first.Kind() {
+		case reflect.Struct:
+			headers := getStructHeaders(first)
+			rows := make([][]string, 0, v.Len())
+			for i := 0; i < v.Len(); i++ {
+				elem := v.Index(i)
+				if elem.Kind() == reflect.Ptr {
+					elem = elem.Elem()
+				}
+				rows = append(rows, escapeMarkdownRow(getStructValues(elem)))
+			}
+			return escapeMarkdownRow(headers), rows, true
+		case reflect.Map:
+			headers := getMapHeaders(first)
+			rows := make([][]string, 0, v.Len())
+			for i := 0; i < v.Len(); i++ {
+				elem := v.Index(i)
+				if elem.Kind() == reflect.Ptr {
+					elem = elem.Elem()
+				}
+				rows = append(rows, escapeMarkdownRow(getMapValues(elem, headers)))
+			}
+			return escapeMarkdownRow(headers), rows, true
+		default:
+			return nil, nil, false
+		}
+	case reflect.Struct:
+		headers := []string{"FIELD", "VALUE"}
+		rows := make([][]string, 0, v.NumField())
+		structHeaders := getStructHeaders(v)
+		structValues := getStructValues(v)
+		for i := range structHeaders {
+			rows = append(rows, escapeMarkdownRow([]string{structHeaders[i], structValues[i]}))
+		}
+		return headers, rows, true
+	case reflect.Map:
+		headers := []string{"FIELD", "VALUE"}
+		keys := getMapHeaders(v)
+		rows := make([][]string, 0, len(keys))
+		values := getMapValues(v, keys)
+		for i := range keys {
+			rows = append(rows, escapeMarkdownRow([]string{keys[i], values[i]}))
+		}
+		return headers, rows, true
+	default:
+		return nil, nil, false
+	}
+}
+
+func escapeMarkdownRow(values []string) []string {
+	escaped := make([]string, len(values))
+	for i, value := range values {
+		escaped[i] = strings.ReplaceAll(value, "|", "\\|")
+	}
+	return escaped
+}
+
 func getStructHeaders(v reflect.Value) []string {
 	t := v.Type()
 	headers := make([]string, 0, t.NumField())
@@ -284,6 +394,48 @@ func getStructValues(v reflect.Value) []string {
 		values = append(values, fmt.Sprintf("%v", field.Interface()))
 	}
 	return values
+}
+
+func getMapHeaders(v reflect.Value) []string {
+	keys := v.MapKeys()
+	headers := make([]string, 0, len(keys))
+	for _, key := range keys {
+		headers = append(headers, fmt.Sprintf("%v", key.Interface()))
+	}
+	sort.Strings(headers)
+	return headers
+}
+
+func getMapValues(v reflect.Value, headers []string) []string {
+	values := make([]string, 0, len(headers))
+	for _, header := range headers {
+		value := v.MapIndex(reflect.ValueOf(header))
+		if value.IsValid() {
+			values = append(values, fmt.Sprintf("%v", value.Interface()))
+			continue
+		}
+		values = append(values, "")
+	}
+	return values
+}
+
+func normalizeFormat(format string) Format {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "md", "markdown":
+		return FormatMarkdown
+	case string(FormatTable):
+		return FormatTable
+	case string(FormatMinimal):
+		return FormatMinimal
+	case string(FormatTSV):
+		return FormatTSV
+	case string(FormatCSV):
+		return FormatCSV
+	case string(FormatYAML):
+		return FormatYAML
+	default:
+		return FormatJSON
+	}
 }
 
 // Result wraps a successful operation result

@@ -276,7 +276,7 @@ Set up a staged rollout to production starting at 5%
 | `GPC_CREDENTIALS_B64` | Base64-encoded credentials (CI) |
 | `GPC_PACKAGE` | Default package name |
 | `GPC_PROFILE` | Auth profile to use |
-| `GPC_OUTPUT` | Format: `json` \| `table` \| `tsv` \| `csv` \| `yaml` |
+| `GPC_OUTPUT` | Format: `json` \| `table` \| `tsv` \| `csv` \| `yaml` \| `markdown` |
 
 ---
 
@@ -289,6 +289,7 @@ gpc tracks list -o table           # ASCII table
 gpc tracks list -o tsv             # Tab-separated values
 gpc tracks list -o csv             # Comma-separated values
 gpc tracks list -o yaml            # YAML
+gpc tracks list -o markdown        # GitHub-flavored Markdown table
 gpc tracks list -o minimal         # First field only (piping)
 ```
 

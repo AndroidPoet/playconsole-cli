@@ -472,5 +472,6 @@ gpc tracks list -o table                # ASCII table
 gpc tracks list -o tsv                  # Tab-separated values
 gpc tracks list -o csv                  # Comma-separated values
 gpc tracks list -o yaml                 # YAML
+gpc tracks list -o markdown             # GitHub-flavored Markdown table
 gpc tracks list -o minimal             # First field only (for scripting)
 ```
