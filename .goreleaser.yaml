@@ -74,6 +74,19 @@ brews:
       bin.install_symlink "playconsole-cli" => "gpc"
     test: |
       system "#{bin}/gpc", "version"
+  - name: gpc
+    repository:
+      owner: AndroidPoet
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/AndroidPoet/playconsole-cli
+    description: "Alias for playconsole-cli"
+    license: MIT
+    install: |
+      bin.install "playconsole-cli" => "gpc"
+    test: |
+      system "#{bin}/gpc", "version"
 
 nfpms:
   - id: packages
