@@ -227,6 +227,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	// Use Patch with allowMissing=true to create
 	result, err := client.Monetization().Onetimeproducts.Patch(client.GetPackageName(), productID, product).
 		AllowMissing(true).
+		RegionsVersionVersion("2022/02").
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -288,6 +289,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	result, err := client.Monetization().Onetimeproducts.Patch(client.GetPackageName(), productID, product).
+		RegionsVersionVersion("2022/02").
 		Context(ctx).
 		Do()
 	if err != nil {

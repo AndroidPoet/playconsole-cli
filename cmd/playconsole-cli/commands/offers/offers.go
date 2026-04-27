@@ -242,7 +242,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	created, err := client.Monetization().Subscriptions.BasePlans.Offers.Create(
 		client.GetPackageName(), productID, basePlanID, &offer,
-	).Context(ctx).Do()
+	).RegionsVersionVersion("2022/02").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("failed to create offer: %w", err)
 	}
@@ -281,7 +281,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	updated, err := client.Monetization().Subscriptions.BasePlans.Offers.Patch(
 		client.GetPackageName(), productID, basePlanID, offerID, &offer,
-	).Context(ctx).Do()
+	).RegionsVersionVersion("2022/02").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("failed to update offer: %w", err)
 	}
