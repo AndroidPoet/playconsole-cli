@@ -2,9 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/AndroidPoet/playconsole-cli/internal/config"
 )
 
 var (
@@ -39,7 +42,13 @@ func GetPackageName() string {
 	if packageName != "" {
 		return packageName
 	}
-	return viper.GetString("package")
+	if pkg := viper.GetString("package"); pkg != "" {
+		return pkg
+	}
+	if profile := config.GetProfile(); profile != nil {
+		return profile.DefaultPackage
+	}
+	return ""
 }
 
 // GetProfile returns the profile name from flag, env, or config
@@ -64,6 +73,20 @@ func GetTimeout() string {
 		return "60s"
 	}
 	return t
+}
+
+// ResolveTimeout returns an explicit user timeout when present, otherwise fallback.
+func ResolveTimeout(fallback time.Duration) time.Duration {
+	if timeout == "" {
+		return fallback
+	}
+
+	parsed, err := time.ParseDuration(timeout)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+
+	return parsed
 }
 
 // IsDryRun returns whether dry-run mode is enabled

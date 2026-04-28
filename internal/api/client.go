@@ -10,6 +10,7 @@ import (
 	"google.golang.org/api/androidpublisher/v3"
 	"google.golang.org/api/option"
 
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/config"
 )
 
@@ -28,12 +29,19 @@ type debugTransport struct {
 
 func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	fmt.Printf("DEBUG: %s %s\n", req.Method, req.URL)
-	return t.base.RoundTrip(req)
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		fmt.Printf("DEBUG: request failed: %v\n", err)
+		return nil, err
+	}
+	fmt.Printf("DEBUG: response %s\n", resp.Status)
+	return resp, nil
 }
 
 // NewClient creates a new API client
 func NewClient(packageName string, timeout time.Duration) (*Client, error) {
 	ctx := context.Background()
+	timeout = cli.ResolveTimeout(timeout)
 
 	// Get credentials
 	creds, err := config.GetCredentials()
@@ -151,10 +159,10 @@ func (c *Client) SystemAPKs() *androidpublisher.SystemapksService {
 
 // Edit represents an active edit session
 type Edit struct {
-	client  *Client
-	editID  string
-	ctx     context.Context
-	cancel  context.CancelFunc
+	client *Client
+	editID string
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // CreateEdit creates a new edit session

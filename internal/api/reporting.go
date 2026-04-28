@@ -9,6 +9,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/playdeveloperreporting/v1beta1"
 
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/config"
 )
 
@@ -22,6 +23,7 @@ type ReportingClient struct {
 // NewReportingClient creates a new Reporting API client
 func NewReportingClient(packageName string, timeout time.Duration) (*ReportingClient, error) {
 	ctx := context.Background()
+	timeout = cli.ResolveTimeout(timeout)
 
 	// Get credentials
 	creds, err := config.GetCredentials()

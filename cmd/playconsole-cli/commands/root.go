@@ -62,7 +62,11 @@ Design Philosophy:
 		// Sync flags to cli package
 		cli.SetPackageName(packageName)
 		cli.SetProfile(profile)
-		cli.SetTimeout(timeout)
+		if cmd.Flags().Changed("timeout") || os.Getenv("GPC_TIMEOUT") != "" {
+			cli.SetTimeout(timeout)
+		} else {
+			cli.SetTimeout("")
+		}
 		cli.SetDryRun(dryRun)
 
 		// Initialize config

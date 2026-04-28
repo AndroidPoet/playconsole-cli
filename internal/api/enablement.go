@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // APIEnablementError represents an error when an API needs to be enabled
@@ -73,6 +75,14 @@ func ParseAPIEnablementError(err error) *APIEnablementError {
 
 // HandleAPIEnablement provides an interactive flow to enable a required API
 func HandleAPIEnablement(apiErr *APIEnablementError) error {
+	if !isInteractiveSession() {
+		return fmt.Errorf(
+			"API '%s' must be enabled before retrying. Enable it here: %s",
+			apiErr.APITitle,
+			apiErr.ActivationURL,
+		)
+	}
+
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║                     API ENABLEMENT REQUIRED                       ║")
@@ -132,6 +142,10 @@ func HandleAPIEnablement(apiErr *APIEnablementError) error {
 		fmt.Println("Invalid option")
 		return HandleAPIEnablement(apiErr)
 	}
+}
+
+func isInteractiveSession() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 func waitForEnablement() error {
@@ -194,8 +208,8 @@ func copyToClipboard(text string) error {
 
 // RequiredAPIs lists all APIs that might be needed by the CLI
 var RequiredAPIs = map[string]string{
-	"androidpublisher.googleapis.com":        "Google Play Android Developer API",
-	"playdeveloperreporting.googleapis.com":  "Google Play Developer Reporting API",
+	"androidpublisher.googleapis.com":       "Google Play Android Developer API",
+	"playdeveloperreporting.googleapis.com": "Google Play Developer Reporting API",
 }
 
 // CheckAndEnableAPI wraps an API call and handles enablement if needed
