@@ -2,13 +2,14 @@ package users
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/api/androidpublisher/v3"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -40,25 +41,42 @@ var revokeCmd = &cobra.Command{
 }
 
 var (
+	developerID string
 	email       string
 	role        string
-	accessLevel string
 )
 
-// Available access levels
-var validAccessLevels = []string{
-	"accessLevel/admin",
-	"accessLevel/releaseManager",
-	"accessLevel/appOwner",
+var rolePermissions = map[string][]string{
+	"admin": {
+		"CAN_MANAGE_PERMISSIONS",
+	},
+	"releaseManager": {
+		"CAN_VIEW_NON_FINANCIAL_DATA",
+		"CAN_VIEW_APP_QUALITY",
+		"CAN_MANAGE_PUBLIC_APKS",
+		"CAN_MANAGE_TRACK_APKS",
+	},
+	"appOwner": {
+		"CAN_VIEW_NON_FINANCIAL_DATA",
+		"CAN_VIEW_APP_QUALITY",
+		"CAN_MANAGE_PUBLIC_APKS",
+		"CAN_MANAGE_TRACK_APKS",
+		"CAN_MANAGE_TRACK_USERS",
+		"CAN_MANAGE_PUBLIC_LISTING",
+		"CAN_REPLY_TO_REVIEWS",
+		"CAN_MANAGE_APP_CONTENT",
+		"CAN_MANAGE_DEEPLINKS",
+	},
 }
 
 func init() {
-	// Grant flags
+	UsersCmd.PersistentFlags().StringVar(&developerID, "developer", "", "developer account ID")
+	UsersCmd.MarkPersistentFlagRequired("developer")
+
 	grantCmd.Flags().StringVar(&email, "email", "", "user email")
 	grantCmd.Flags().StringVar(&role, "role", "releaseManager", "role: admin, releaseManager, appOwner")
 	grantCmd.MarkFlagRequired("email")
 
-	// Revoke flags
 	revokeCmd.Flags().StringVar(&email, "email", "", "user email")
 	revokeCmd.Flags().Bool("confirm", false, "confirm revocation")
 	revokeCmd.MarkFlagRequired("email")
@@ -68,16 +86,23 @@ func init() {
 	UsersCmd.AddCommand(revokeCmd)
 }
 
-// UserInfo represents user information
+type GrantInfo struct {
+	Name        string   `json:"name"`
+	PackageName string   `json:"package_name,omitempty"`
+	Permissions []string `json:"permissions,omitempty"`
+}
+
 type UserInfo struct {
-	Email           string   `json:"email"`
-	Name            string   `json:"name,omitempty"`
-	DeveloperAccess string   `json:"developer_access,omitempty"`
-	AppAccess       []string `json:"app_access,omitempty"`
+	Email                       string      `json:"email"`
+	Name                        string      `json:"name,omitempty"`
+	AccessState                 string      `json:"access_state,omitempty"`
+	DeveloperAccountPermissions []string    `json:"developer_account_permissions,omitempty"`
+	Partial                     bool        `json:"partial,omitempty"`
+	Grants                      []GrantInfo `json:"grants,omitempty"`
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	client, err := api.NewClient("", 60*time.Second) // No package needed for listing users
+	client, err := api.NewClient("", 60*time.Second)
 	if err != nil {
 		return err
 	}
@@ -85,24 +110,14 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	// Note: The Users API requires the developer ID, which is obtained from the parent
-	// For this implementation, we'll show how the API would be called
-	users, err := client.Users().List("developers/-").Context(ctx).Do()
+	users, err := client.Users().List(developerParent()).Context(ctx).PageSize(-1).Do()
 	if err != nil {
 		return err
 	}
 
 	result := make([]UserInfo, 0, len(users.Users))
 	for _, u := range users.Users {
-		info := UserInfo{
-			Email: u.Email,
-			Name:  u.Name,
-		}
-
-		// Developer access info would be populated from grants
-		info.DeveloperAccess = "configured"
-
-		result = append(result, info)
+		result = append(result, userInfoFromAPI(u))
 	}
 
 	if len(result) == 0 {
@@ -118,11 +133,16 @@ func runGrant(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Map role flag to access level
-	accessLevel := fmt.Sprintf("accessLevel/%s", role)
+	permissions, err := permissionsForRole(role)
+	if err != nil {
+		return err
+	}
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would grant '%s' access to %s for package %s", role, email, cli.GetPackageName())
+		output.PrintInfo(
+			"Dry run: would grant role '%s' to %s for package %s in developer %s",
+			role, email, cli.GetPackageName(), developerID,
+		)
 		return nil
 	}
 
@@ -134,17 +154,12 @@ func runGrant(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	// Create a grant for the user
 	grant := &androidpublisher.Grant{
-		PackageName: cli.GetPackageName(),
-		AppLevelPermissions: []string{
-			accessLevel,
-		},
+		PackageName:         cli.GetPackageName(),
+		AppLevelPermissions: permissions,
 	}
 
-	// The parent path for grants is: developers/{developer_id}/users/{email}
-	parent := fmt.Sprintf("developers/-/users/%s", email)
-
+	parent := fmt.Sprintf("%s/users/%s", developerParent(), email)
 	created, err := client.Grants().Create(parent, grant).Context(ctx).Do()
 	if err != nil {
 		return err
@@ -152,10 +167,11 @@ func runGrant(cmd *cobra.Command, args []string) error {
 
 	output.PrintSuccess("Access granted to %s for package %s", email, cli.GetPackageName())
 	return output.Print(map[string]interface{}{
-		"email":   email,
-		"package": cli.GetPackageName(),
-		"role":    role,
-		"grant":   created.Name,
+		"email":       email,
+		"package":     cli.GetPackageName(),
+		"role":        role,
+		"permissions": permissions,
+		"grant":       created.Name,
 	})
 }
 
@@ -170,7 +186,10 @@ func runRevoke(cmd *cobra.Command, args []string) error {
 	}
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would revoke access from %s for package %s", email, cli.GetPackageName())
+		output.PrintInfo(
+			"Dry run: would revoke access from %s for package %s in developer %s",
+			email, cli.GetPackageName(), developerID,
+		)
 		return nil
 	}
 
@@ -182,14 +201,51 @@ func runRevoke(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	// The grant name format is: developers/{developer_id}/users/{email}/grants/{package_name}
-	grantName := fmt.Sprintf("developers/-/users/%s/grants/%s", email, cli.GetPackageName())
-
-	err = client.Grants().Delete(grantName).Context(ctx).Do()
-	if err != nil {
+	grantName := fmt.Sprintf("%s/users/%s/grants/%s", developerParent(), email, cli.GetPackageName())
+	if err := client.Grants().Delete(grantName).Context(ctx).Do(); err != nil {
 		return err
 	}
 
 	output.PrintSuccess("Access revoked from %s for package %s", email, cli.GetPackageName())
 	return nil
+}
+
+func developerParent() string {
+	return fmt.Sprintf("developers/%s", developerID)
+}
+
+func permissionsForRole(name string) ([]string, error) {
+	permissions, ok := rolePermissions[name]
+	if !ok {
+		roles := make([]string, 0, len(rolePermissions))
+		for roleName := range rolePermissions {
+			roles = append(roles, roleName)
+		}
+		return nil, fmt.Errorf("invalid role %q. Valid roles: %s", name, strings.Join(roles, ", "))
+	}
+
+	return permissions, nil
+}
+
+func userInfoFromAPI(user *androidpublisher.User) UserInfo {
+	info := UserInfo{
+		Email:                       user.Email,
+		Name:                        user.Name,
+		AccessState:                 user.AccessState,
+		DeveloperAccountPermissions: user.DeveloperAccountPermissions,
+		Partial:                     user.Partial,
+	}
+
+	if len(user.Grants) > 0 {
+		info.Grants = make([]GrantInfo, 0, len(user.Grants))
+		for _, grant := range user.Grants {
+			info.Grants = append(info.Grants, GrantInfo{
+				Name:        grant.Name,
+				PackageName: grant.PackageName,
+				Permissions: grant.AppLevelPermissions,
+			})
+		}
+	}
+
+	return info
 }

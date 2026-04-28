@@ -47,7 +47,6 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
-        continue-on-error: true
 
   validate-goreleaser:
     name: Validate GoReleaser
@@ -70,4 +69,3 @@ jobs:
           distribution: goreleaser
           version: latest
           args: check
-        continue-on-error: true

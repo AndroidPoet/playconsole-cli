@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/api/androidpublisher/v3"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -59,12 +60,12 @@ Expected structure (fastlane-compatible):
 }
 
 var (
-	locale          string
-	title           string
-	shortDesc       string
-	fullDesc        string
-	fullDescFile    string
-	syncDir         string
+	locale       string
+	title        string
+	shortDesc    string
+	fullDesc     string
+	fullDescFile string
+	syncDir      string
 )
 
 func init() {
@@ -275,6 +276,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	ctx := edit.Context()
 	updated := 0
+	failures := make([]string, 0)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -315,12 +317,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 		_, err := edit.Listings().Update(client.GetPackageName(), edit.ID(), localeName, listing).Context(ctx).Do()
 		if err != nil {
-			output.PrintWarning("Failed to update locale '%s': %v", localeName, err)
+			failures = append(failures, fmt.Sprintf("%s: %v", localeName, err))
 			continue
 		}
 
 		output.PrintInfo("Updated: %s", localeName)
 		updated++
+	}
+
+	if len(failures) > 0 {
+		return fmt.Errorf("listing sync aborted; no changes committed. Failures: %s", strings.Join(failures, "; "))
 	}
 
 	if !cli.IsDryRun() && updated > 0 {

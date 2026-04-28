@@ -41,7 +41,7 @@ Design Philosophy:
   • JSON-first output for automation
   • Explicit flags over cryptic shortcuts
   • No interactive prompts
-  • Clean exit codes (0=success, 1=error, 2=validation)`,
+  • Clean non-zero exits on failure`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

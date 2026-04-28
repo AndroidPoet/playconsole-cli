@@ -1,10 +1,13 @@
 package vitals
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
+	playdeveloperreporting "google.golang.org/api/playdeveloperreporting/v1beta1"
 
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
 	"github.com/AndroidPoet/playconsole-cli/internal/cli"
@@ -91,7 +94,6 @@ var (
 )
 
 func init() {
-	// Common flags for all metric commands
 	daysCommands := []*cobra.Command{
 		crashesCmd, anrCmd, overviewCmd,
 		slowStartCmd, slowRenderingCmd, wakeupsCmd,
@@ -101,7 +103,6 @@ func init() {
 		cmd.Flags().IntVar(&days, "days", 28, "number of days to query (7, 28, or custom)")
 	}
 
-	// Build errors sub-tree
 	errorsCmd.AddCommand(errorsIssuesCmd)
 
 	VitalsCmd.AddCommand(crashesCmd)
@@ -115,409 +116,287 @@ func init() {
 	VitalsCmd.AddCommand(errorsCmd)
 }
 
-// CrashRateInfo represents crash rate information
 type CrashRateInfo struct {
-	CrashRate       float64 `json:"crash_rate"`
-	CrashRate7d     float64 `json:"crash_rate_7d,omitempty"`
-	CrashRate28d    float64 `json:"crash_rate_28d,omitempty"`
-	DistinctUsers   int64   `json:"distinct_users,omitempty"`
-	CrashSessions   int64   `json:"crash_sessions,omitempty"`
-	Period          string  `json:"period"`
-}
-
-// ANRRateInfo represents ANR rate information
-type ANRRateInfo struct {
-	ANRRate       float64 `json:"anr_rate"`
-	ANRRate7d     float64 `json:"anr_rate_7d,omitempty"`
-	ANRRate28d    float64 `json:"anr_rate_28d,omitempty"`
-	DistinctUsers int64   `json:"distinct_users,omitempty"`
-	ANRSessions   int64   `json:"anr_sessions,omitempty"`
+	CrashRate     float64 `json:"crash_rate"`
+	CrashRate7d   float64 `json:"crash_rate_7d,omitempty"`
+	CrashRate28d  float64 `json:"crash_rate_28d,omitempty"`
+	DistinctUsers float64 `json:"distinct_users,omitempty"`
 	Period        string  `json:"period"`
 }
 
-// VitalsOverview represents an overview of app vitals
+type ANRRateInfo struct {
+	ANRRate              float64 `json:"anr_rate"`
+	ANRRate7d            float64 `json:"anr_rate_7d,omitempty"`
+	ANRRate28d           float64 `json:"anr_rate_28d,omitempty"`
+	UserPerceivedANRRate float64 `json:"user_perceived_anr_rate,omitempty"`
+	DistinctUsers        float64 `json:"distinct_users,omitempty"`
+	Period               string  `json:"period"`
+}
+
 type VitalsOverview struct {
 	PackageName   string  `json:"package_name"`
 	CrashRate     float64 `json:"crash_rate"`
 	ANRRate       float64 `json:"anr_rate"`
+	SlowStartRate float64 `json:"slow_start_rate,omitempty"`
 	Period        string  `json:"period"`
-	Status        string  `json:"status"`
+}
+
+type SlowStartInfo struct {
+	SlowStartRate    float64 `json:"slow_start_rate"`
+	SlowStartRate7d  float64 `json:"slow_start_rate_7d,omitempty"`
+	SlowStartRate28d float64 `json:"slow_start_rate_28d,omitempty"`
+	DistinctUsers    float64 `json:"distinct_users,omitempty"`
+	Period           string  `json:"period"`
+}
+
+type SlowRenderingInfo struct {
+	SlowRenderingRate20Fps    float64 `json:"slow_rendering_rate_20_fps,omitempty"`
+	SlowRenderingRate20Fps7d  float64 `json:"slow_rendering_rate_20_fps_7d,omitempty"`
+	SlowRenderingRate20Fps28d float64 `json:"slow_rendering_rate_20_fps_28d,omitempty"`
+	SlowRenderingRate30Fps    float64 `json:"slow_rendering_rate_30_fps,omitempty"`
+	SlowRenderingRate30Fps7d  float64 `json:"slow_rendering_rate_30_fps_7d,omitempty"`
+	SlowRenderingRate30Fps28d float64 `json:"slow_rendering_rate_30_fps_28d,omitempty"`
+	DistinctUsers             float64 `json:"distinct_users,omitempty"`
+	Period                    string  `json:"period"`
+}
+
+type WakeupInfo struct {
+	ExcessiveWakeupRate    float64 `json:"excessive_wakeup_rate"`
+	ExcessiveWakeupRate7d  float64 `json:"excessive_wakeup_rate_7d,omitempty"`
+	ExcessiveWakeupRate28d float64 `json:"excessive_wakeup_rate_28d,omitempty"`
+	DistinctUsers          float64 `json:"distinct_users,omitempty"`
+	Period                 string  `json:"period"`
+}
+
+type WakelockInfo struct {
+	StuckBgWakelockRate    float64 `json:"stuck_bg_wakelock_rate"`
+	StuckBgWakelockRate7d  float64 `json:"stuck_bg_wakelock_rate_7d,omitempty"`
+	StuckBgWakelockRate28d float64 `json:"stuck_bg_wakelock_rate_28d,omitempty"`
+	DistinctUsers          float64 `json:"distinct_users,omitempty"`
+	Period                 string  `json:"period"`
+}
+
+type MemoryInfo struct {
+	UserPerceivedLmkRate    float64 `json:"user_perceived_lmk_rate"`
+	UserPerceivedLmkRate7d  float64 `json:"user_perceived_lmk_rate_7d,omitempty"`
+	UserPerceivedLmkRate28d float64 `json:"user_perceived_lmk_rate_28d,omitempty"`
+	DistinctUsers           float64 `json:"distinct_users,omitempty"`
+	Period                  string  `json:"period"`
+}
+
+type ErrorInfo struct {
+	ErrorReportCount float64 `json:"error_report_count"`
+	DistinctUsers    float64 `json:"distinct_users,omitempty"`
+	Period           string  `json:"period"`
 }
 
 func runCrashes(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	// Query crash rate
-	appName := client.AppName()
-	crashRateName := fmt.Sprintf("%s/crashRateMetricSet", appName)
-
-	resp, err := client.Vitals().Crashrate.Get(crashRateName).Context(ctx).Do()
+	metrics, err := queryCrashMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get crash rate: %w", err)
+		return err
 	}
 
-	info := CrashRateInfo{
-		Period: fmt.Sprintf("%d days", days),
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.CrashRate = 0 // Will be populated from query
-	}
-
-	return output.Print(info)
+	return output.Print(CrashRateInfo{
+		CrashRate:     metrics["crashRate"],
+		CrashRate7d:   metrics["crashRate7dUserWeighted"],
+		CrashRate28d:  metrics["crashRate28dUserWeighted"],
+		DistinctUsers: metrics["distinctUsers"],
+		Period:        periodLabel(),
+	})
 }
 
 func runANR(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	// Query ANR rate
-	appName := client.AppName()
-	anrRateName := fmt.Sprintf("%s/anrRateMetricSet", appName)
-
-	resp, err := client.Vitals().Anrrate.Get(anrRateName).Context(ctx).Do()
+	metrics, err := queryANRMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get ANR rate: %w", err)
+		return err
 	}
 
-	info := ANRRateInfo{
-		Period: fmt.Sprintf("%d days", days),
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.ANRRate = 0 // Will be populated from query
-	}
-
-	return output.Print(info)
+	return output.Print(ANRRateInfo{
+		ANRRate:              metrics["anrRate"],
+		ANRRate7d:            metrics["anrRate7dUserWeighted"],
+		ANRRate28d:           metrics["anrRate28dUserWeighted"],
+		UserPerceivedANRRate: metrics["userPerceivedAnrRate"],
+		DistinctUsers:        metrics["distinctUsers"],
+		Period:               periodLabel(),
+	})
 }
 
 func runOverview(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-
-	// Get crash rate
-	crashRateName := fmt.Sprintf("%s/crashRateMetricSet", appName)
-	crashResp, err := client.Vitals().Crashrate.Get(crashRateName).Context(ctx).Do()
+	crashMetrics, err := queryCrashMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get crash rate: %w", err)
+		return err
 	}
-
-	// Get ANR rate
-	anrRateName := fmt.Sprintf("%s/anrRateMetricSet", appName)
-	anrResp, err := client.Vitals().Anrrate.Get(anrRateName).Context(ctx).Do()
+	anrMetrics, err := queryANRMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get ANR rate: %w", err)
+		return err
+	}
+	slowStartMetrics, err := querySlowStartMetrics(client, ctx)
+	if err != nil {
+		return err
 	}
 
-	overview := VitalsOverview{
-		PackageName: cli.GetPackageName(),
-		Period:      fmt.Sprintf("%d days", days),
-		Status:      "healthy",
-	}
-
-	// Check freshness
-	if crashResp.FreshnessInfo != nil {
-		overview.CrashRate = 0
-	}
-	if anrResp.FreshnessInfo != nil {
-		overview.ANRRate = 0
-	}
-
-	return output.Print(overview)
-}
-
-// SlowStartInfo represents slow start rate information
-type SlowStartInfo struct {
-	MetricSet string `json:"metric_set"`
-	Period    string `json:"period"`
-	Status    string `json:"status"`
-}
-
-// SlowRenderingInfo represents slow rendering rate information
-type SlowRenderingInfo struct {
-	MetricSet string `json:"metric_set"`
-	Period    string `json:"period"`
-	Status    string `json:"status"`
-}
-
-// WakeupInfo represents excessive wakeup rate information
-type WakeupInfo struct {
-	MetricSet string `json:"metric_set"`
-	Period    string `json:"period"`
-	Status    string `json:"status"`
-}
-
-// WakelockInfo represents stuck wakelock rate information
-type WakelockInfo struct {
-	MetricSet string `json:"metric_set"`
-	Period    string `json:"period"`
-	Status    string `json:"status"`
-}
-
-// MemoryInfo represents low memory killer rate information
-type MemoryInfo struct {
-	MetricSet string `json:"metric_set"`
-	Period    string `json:"period"`
-	Status    string `json:"status"`
-}
-
-// ErrorInfo represents error count information
-type ErrorInfo struct {
-	MetricSet string `json:"metric_set"`
-	Period    string `json:"period"`
-	Status    string `json:"status"`
+	return output.Print(VitalsOverview{
+		PackageName:   cli.GetPackageName(),
+		CrashRate:     crashMetrics["crashRate"],
+		ANRRate:       anrMetrics["anrRate"],
+		SlowStartRate: slowStartMetrics["slowStartRate"],
+		Period:        periodLabel(),
+	})
 }
 
 func runSlowStart(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-	metricName := fmt.Sprintf("%s/slowStartRateMetricSet", appName)
-
-	resp, err := client.Vitals().Slowstartrate.Get(metricName).Context(ctx).Do()
+	metrics, err := querySlowStartMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get slow start rate: %w", err)
+		return err
 	}
 
-	info := SlowStartInfo{
-		MetricSet: resp.Name,
-		Period:    fmt.Sprintf("%d days", days),
-		Status:    "available",
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.Status = "fresh"
-	}
-
-	return output.Print(info)
+	return output.Print(SlowStartInfo{
+		SlowStartRate:    metrics["slowStartRate"],
+		SlowStartRate7d:  metrics["slowStartRate7dUserWeighted"],
+		SlowStartRate28d: metrics["slowStartRate28dUserWeighted"],
+		DistinctUsers:    metrics["distinctUsers"],
+		Period:           periodLabel(),
+	})
 }
 
 func runSlowRendering(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-	metricName := fmt.Sprintf("%s/slowRenderingRateMetricSet", appName)
-
-	resp, err := client.Vitals().Slowrenderingrate.Get(metricName).Context(ctx).Do()
+	metrics, err := querySlowRenderingMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get slow rendering rate: %w", err)
+		return err
 	}
 
-	info := SlowRenderingInfo{
-		MetricSet: resp.Name,
-		Period:    fmt.Sprintf("%d days", days),
-		Status:    "available",
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.Status = "fresh"
-	}
-
-	return output.Print(info)
+	return output.Print(SlowRenderingInfo{
+		SlowRenderingRate20Fps:    metrics["slowRenderingRate20Fps"],
+		SlowRenderingRate20Fps7d:  metrics["slowRenderingRate20Fps7dUserWeighted"],
+		SlowRenderingRate20Fps28d: metrics["slowRenderingRate20Fps28dUserWeighted"],
+		SlowRenderingRate30Fps:    metrics["slowRenderingRate30Fps"],
+		SlowRenderingRate30Fps7d:  metrics["slowRenderingRate30Fps7dUserWeighted"],
+		SlowRenderingRate30Fps28d: metrics["slowRenderingRate30Fps28dUserWeighted"],
+		DistinctUsers:             metrics["distinctUsers"],
+		Period:                    periodLabel(),
+	})
 }
 
 func runWakeups(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-	metricName := fmt.Sprintf("%s/excessiveWakeupRateMetricSet", appName)
-
-	resp, err := client.Vitals().Excessivewakeuprate.Get(metricName).Context(ctx).Do()
+	metrics, err := queryWakeupMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get excessive wakeup rate: %w", err)
+		return err
 	}
 
-	info := WakeupInfo{
-		MetricSet: resp.Name,
-		Period:    fmt.Sprintf("%d days", days),
-		Status:    "available",
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.Status = "fresh"
-	}
-
-	return output.Print(info)
+	return output.Print(WakeupInfo{
+		ExcessiveWakeupRate:    metrics["excessiveWakeupRate"],
+		ExcessiveWakeupRate7d:  metrics["excessiveWakeupRate7dUserWeighted"],
+		ExcessiveWakeupRate28d: metrics["excessiveWakeupRate28dUserWeighted"],
+		DistinctUsers:          metrics["distinctUsers"],
+		Period:                 periodLabel(),
+	})
 }
 
 func runWakelocks(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-	metricName := fmt.Sprintf("%s/stuckBackgroundWakelockRateMetricSet", appName)
-
-	resp, err := client.Vitals().Stuckbackgroundwakelockrate.Get(metricName).Context(ctx).Do()
+	metrics, err := queryWakelockMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get stuck wakelock rate: %w", err)
+		return err
 	}
 
-	info := WakelockInfo{
-		MetricSet: resp.Name,
-		Period:    fmt.Sprintf("%d days", days),
-		Status:    "available",
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.Status = "fresh"
-	}
-
-	return output.Print(info)
+	return output.Print(WakelockInfo{
+		StuckBgWakelockRate:    metrics["stuckBgWakelockRate"],
+		StuckBgWakelockRate7d:  metrics["stuckBgWakelockRate7dUserWeighted"],
+		StuckBgWakelockRate28d: metrics["stuckBgWakelockRate28dUserWeighted"],
+		DistinctUsers:          metrics["distinctUsers"],
+		Period:                 periodLabel(),
+	})
 }
 
 func runMemory(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-	metricName := fmt.Sprintf("%s/lmkRateMetricSet", appName)
-
-	resp, err := client.Vitals().Lmkrate.Get(metricName).Context(ctx).Do()
+	metrics, err := queryMemoryMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get LMK rate: %w", err)
+		return err
 	}
 
-	info := MemoryInfo{
-		MetricSet: resp.Name,
-		Period:    fmt.Sprintf("%d days", days),
-		Status:    "available",
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.Status = "fresh"
-	}
-
-	return output.Print(info)
+	return output.Print(MemoryInfo{
+		UserPerceivedLmkRate:    metrics["userPerceivedLmkRate"],
+		UserPerceivedLmkRate7d:  metrics["userPerceivedLmkRate7dUserWeighted"],
+		UserPerceivedLmkRate28d: metrics["userPerceivedLmkRate28dUserWeighted"],
+		DistinctUsers:           metrics["distinctUsers"],
+		Period:                  periodLabel(),
+	})
 }
 
 func runErrors(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-	metricName := fmt.Sprintf("%s/errorCountMetricSet", appName)
-
-	resp, err := client.Vitals().Errors.Counts.Get(metricName).Context(ctx).Do()
+	metrics, err := queryErrorMetrics(client, ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get error counts: %w", err)
+		return err
 	}
 
-	info := ErrorInfo{
-		MetricSet: resp.Name,
-		Period:    fmt.Sprintf("%d days", days),
-		Status:    "available",
-	}
-
-	if resp.FreshnessInfo != nil && len(resp.FreshnessInfo.Freshnesses) > 0 {
-		info.Status = "fresh"
-	}
-
-	return output.Print(info)
+	return output.Print(ErrorInfo{
+		ErrorReportCount: metrics["errorReportCount"],
+		DistinctUsers:    metrics["distinctUsers"],
+		Period:           periodLabel(),
+	})
 }
 
 func runErrorIssues(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
-	}
-
-	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	client, ctx, cancel, err := reportingContext(cmd)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := client.Context()
 	defer cancel()
 
-	appName := client.AppName()
-
-	resp, err := client.Vitals().Errors.Issues.Search(appName).Context(ctx).Do()
+	resp, err := client.Vitals().Errors.Issues.Search(client.AppName()).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("failed to list error issues: %w", err)
 	}
@@ -530,7 +409,6 @@ func runErrorIssues(cmd *cobra.Command, args []string) error {
 	type IssueInfo struct {
 		Name         string `json:"name"`
 		Type         string `json:"type"`
-		ErrorCount   int64  `json:"error_count,omitempty"`
 		Cause        string `json:"cause,omitempty"`
 		FirstVersion string `json:"first_version,omitempty"`
 	}
@@ -551,4 +429,222 @@ func runErrorIssues(cmd *cobra.Command, args []string) error {
 	}
 
 	return output.Print(result)
+}
+
+func reportingContext(cmd *cobra.Command) (*api.ReportingClient, context.Context, context.CancelFunc, error) {
+	if err := cli.RequirePackage(cmd); err != nil {
+		return nil, nil, nil, err
+	}
+
+	client, err := api.NewReportingClient(cli.GetPackageName(), 60*time.Second)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	ctx, cancel := client.Context()
+	return client, ctx, cancel, nil
+}
+
+func queryCrashMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryCrashRateMetricSetRequest{
+		Metrics:      []string{"crashRate", "crashRate7dUserWeighted", "crashRate28dUserWeighted", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Crashrate.Query(
+		fmt.Sprintf("%s/crashRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query crash rate metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func queryANRMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryAnrRateMetricSetRequest{
+		Metrics:      []string{"anrRate", "anrRate7dUserWeighted", "anrRate28dUserWeighted", "userPerceivedAnrRate", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Anrrate.Query(
+		fmt.Sprintf("%s/anrRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ANR metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func querySlowStartMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QuerySlowStartRateMetricSetRequest{
+		Metrics:      []string{"slowStartRate", "slowStartRate7dUserWeighted", "slowStartRate28dUserWeighted", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Slowstartrate.Query(
+		fmt.Sprintf("%s/slowStartRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query slow start metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func querySlowRenderingMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QuerySlowRenderingRateMetricSetRequest{
+		Metrics: []string{
+			"slowRenderingRate20Fps",
+			"slowRenderingRate20Fps7dUserWeighted",
+			"slowRenderingRate20Fps28dUserWeighted",
+			"slowRenderingRate30Fps",
+			"slowRenderingRate30Fps7dUserWeighted",
+			"slowRenderingRate30Fps28dUserWeighted",
+			"distinctUsers",
+		},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Slowrenderingrate.Query(
+		fmt.Sprintf("%s/slowRenderingRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query slow rendering metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func queryWakeupMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryExcessiveWakeupRateMetricSetRequest{
+		Metrics:      []string{"excessiveWakeupRate", "excessiveWakeupRate7dUserWeighted", "excessiveWakeupRate28dUserWeighted", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Excessivewakeuprate.Query(
+		fmt.Sprintf("%s/excessiveWakeupRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query excessive wakeup metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func queryWakelockMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryStuckBackgroundWakelockRateMetricSetRequest{
+		Metrics:      []string{"stuckBgWakelockRate", "stuckBgWakelockRate7dUserWeighted", "stuckBgWakelockRate28dUserWeighted", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Stuckbackgroundwakelockrate.Query(
+		fmt.Sprintf("%s/stuckBackgroundWakelockRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query stuck wakelock metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func queryMemoryMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryLmkRateMetricSetRequest{
+		Metrics:      []string{"userPerceivedLmkRate", "userPerceivedLmkRate7dUserWeighted", "userPerceivedLmkRate28dUserWeighted", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Lmkrate.Query(
+		fmt.Sprintf("%s/lmkRateMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query LMK metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func queryErrorMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryErrorCountMetricSetRequest{
+		Metrics:      []string{"errorReportCount", "distinctUsers"},
+		TimelineSpec: timelineSpec(),
+	}
+
+	resp, err := client.Vitals().Errors.Counts.Query(
+		fmt.Sprintf("%s/errorCountMetricSet", client.AppName()),
+		req,
+	).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query error count metrics: %w", err)
+	}
+
+	return firstRowMetrics(resp.Rows)
+}
+
+func timelineSpec() *playdeveloperreporting.GooglePlayDeveloperReportingV1beta1TimelineSpec {
+	if days < 1 {
+		days = 1
+	}
+
+	location, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		location = time.FixedZone("America/Los_Angeles", -8*60*60)
+	}
+
+	end := time.Now().In(location).Truncate(24 * time.Hour).Add(24 * time.Hour)
+	start := end.AddDate(0, 0, -days)
+
+	return &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1TimelineSpec{
+		AggregationPeriod: "FULL_RANGE",
+		StartTime:         dateTime(start),
+		EndTime:           dateTime(end),
+	}
+}
+
+func dateTime(t time.Time) *playdeveloperreporting.GoogleTypeDateTime {
+	return &playdeveloperreporting.GoogleTypeDateTime{
+		Year:  int64(t.Year()),
+		Month: int64(t.Month()),
+		Day:   int64(t.Day()),
+		TimeZone: &playdeveloperreporting.GoogleTypeTimeZone{
+			Id: "America/Los_Angeles",
+		},
+	}
+}
+
+func firstRowMetrics(rows []*playdeveloperreporting.GooglePlayDeveloperReportingV1beta1MetricsRow) (map[string]float64, error) {
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("no vitals data returned for %s", periodLabel())
+	}
+
+	result := make(map[string]float64)
+	for _, metric := range rows[0].Metrics {
+		if metric == nil || metric.Metric == "" || metric.DecimalValue == nil {
+			continue
+		}
+
+		value, err := strconv.ParseFloat(metric.DecimalValue.Value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse metric %q value %q: %w", metric.Metric, metric.DecimalValue.Value, err)
+		}
+		result[metric.Metric] = value
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no metric values returned for %s", periodLabel())
+	}
+
+	return result, nil
+}
+
+func periodLabel() string {
+	return fmt.Sprintf("%d days", days)
 }

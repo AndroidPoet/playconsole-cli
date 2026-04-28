@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -136,9 +136,9 @@ func init() {
 
 // ImageInfo represents image information
 type ImageInfo struct {
-	ID  string `json:"id"`
-	URL string `json:"url,omitempty"`
-	SHA1 string `json:"sha1,omitempty"`
+	ID     string `json:"id"`
+	URL    string `json:"url,omitempty"`
+	SHA1   string `json:"sha1,omitempty"`
 	SHA256 string `json:"sha256,omitempty"`
 }
 
@@ -180,9 +180,9 @@ func runList(cmd *cobra.Command, args []string) error {
 	result := make([]ImageInfo, 0, len(images.Images))
 	for _, img := range images.Images {
 		result = append(result, ImageInfo{
-			ID:  img.Id,
-			URL: img.Url,
-			SHA1: img.Sha1,
+			ID:     img.Id,
+			URL:    img.Url,
+			SHA1:   img.Sha1,
 			SHA256: img.Sha256,
 		})
 	}
@@ -249,8 +249,8 @@ func runUpload(cmd *cobra.Command, args []string) error {
 
 	output.PrintSuccess("Image uploaded: %s", image.Image.Id)
 	return output.Print(ImageInfo{
-		ID:  image.Image.Id,
-		SHA1: image.Image.Sha1,
+		ID:     image.Image.Id,
+		SHA1:   image.Image.Sha1,
 		SHA256: image.Image.Sha256,
 	})
 }
@@ -372,6 +372,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	ctx := edit.Context()
 	uploaded := 0
+	changed := false
+	failures := make([]string, 0)
 
 	// Walk directory: locale/imageType/files
 	locales, err := os.ReadDir(absDir)
@@ -405,28 +407,39 @@ func runSync(cmd *cobra.Command, args []string) error {
 			typeDir := filepath.Join(localeDir, typeName)
 			files, err := os.ReadDir(typeDir)
 			if err != nil {
+				failures = append(failures, fmt.Sprintf("%s/%s: %v", localeName, typeName, err))
 				continue
 			}
 
+			localFiles := make([]string, 0)
 			for _, fileEntry := range files {
 				if fileEntry.IsDir() {
 					continue
 				}
 
-				filePath := filepath.Join(typeDir, fileEntry.Name())
 				ext := strings.ToLower(filepath.Ext(fileEntry.Name()))
 				if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
 					continue
 				}
 
-				if cli.IsDryRun() {
-					output.PrintInfo("Dry run: would upload %s to %s/%s", fileEntry.Name(), localeName, typeName)
-					continue
-				}
+				localFiles = append(localFiles, filepath.Join(typeDir, fileEntry.Name()))
+			}
 
-				file, err := os.Open(filePath)
+			if cli.IsDryRun() {
+				output.PrintInfo("Dry run: would replace %s/%s with %d image(s)", localeName, typeName, len(localFiles))
+				continue
+			}
+
+			if _, err := edit.Images().Deleteall(client.GetPackageName(), edit.ID(), localeName, typeName).Context(ctx).Do(); err != nil {
+				failures = append(failures, fmt.Sprintf("%s/%s: failed to clear existing images: %v", localeName, typeName, err))
+				continue
+			}
+			changed = true
+
+			for _, localFile := range localFiles {
+				file, err := os.Open(localFile)
 				if err != nil {
-					output.PrintWarning("Failed to open %s: %v", filePath, err)
+					failures = append(failures, fmt.Sprintf("%s/%s/%s: %v", localeName, typeName, filepath.Base(localFile), err))
 					continue
 				}
 
@@ -434,17 +447,21 @@ func runSync(cmd *cobra.Command, args []string) error {
 				file.Close()
 
 				if err != nil {
-					output.PrintWarning("Failed to upload %s: %v", fileEntry.Name(), err)
+					failures = append(failures, fmt.Sprintf("%s/%s/%s: %v", localeName, typeName, filepath.Base(localFile), err))
 					continue
 				}
 
-				output.PrintInfo("Uploaded: %s/%s/%s", localeName, typeName, fileEntry.Name())
+				output.PrintInfo("Uploaded: %s/%s/%s", localeName, typeName, filepath.Base(localFile))
 				uploaded++
 			}
 		}
 	}
 
-	if !cli.IsDryRun() && uploaded > 0 {
+	if len(failures) > 0 {
+		return fmt.Errorf("image sync aborted; no changes committed. Failures: %s", strings.Join(failures, "; "))
+	}
+
+	if !cli.IsDryRun() && changed {
 		if err := edit.Commit(); err != nil {
 			return err
 		}
