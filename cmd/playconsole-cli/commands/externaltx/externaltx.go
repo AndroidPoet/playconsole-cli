@@ -51,15 +51,15 @@ var (
 
 func init() {
 	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with transaction definition")
-	createCmd.MarkFlagRequired("file")
+	cli.MustMarkFlagRequired(createCmd, "file")
 
 	getCmd.Flags().StringVar(&txName, "name", "", "transaction resource name")
-	getCmd.MarkFlagRequired("name")
+	cli.MustMarkFlagRequired(getCmd, "name")
 
 	refundCmd.Flags().StringVar(&txName, "name", "", "transaction resource name")
 	refundCmd.Flags().StringVar(&filePath, "file", "", "JSON file with refund request (optional)")
 	refundCmd.Flags().Bool("confirm", false, "confirm destructive operation")
-	refundCmd.MarkFlagRequired("name")
+	cli.MustMarkFlagRequired(refundCmd, "name")
 
 	ExternalTxCmd.AddCommand(createCmd)
 	ExternalTxCmd.AddCommand(getCmd)

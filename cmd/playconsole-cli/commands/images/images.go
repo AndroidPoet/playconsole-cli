@@ -96,36 +96,36 @@ func init() {
 	// List flags
 	listCmd.Flags().StringVar(&locale, "locale", "", "locale code (e.g., en-US)")
 	listCmd.Flags().StringVar(&imageType, "type", "", "image type")
-	listCmd.MarkFlagRequired("locale")
-	listCmd.MarkFlagRequired("type")
+	cli.MustMarkFlagRequired(listCmd, "locale")
+	cli.MustMarkFlagRequired(listCmd, "type")
 
 	// Upload flags
 	uploadCmd.Flags().StringVar(&locale, "locale", "", "locale code")
 	uploadCmd.Flags().StringVar(&imageType, "type", "", "image type")
 	uploadCmd.Flags().StringVar(&filePath, "file", "", "path to image file")
-	uploadCmd.MarkFlagRequired("locale")
-	uploadCmd.MarkFlagRequired("type")
-	uploadCmd.MarkFlagRequired("file")
+	cli.MustMarkFlagRequired(uploadCmd, "locale")
+	cli.MustMarkFlagRequired(uploadCmd, "type")
+	cli.MustMarkFlagRequired(uploadCmd, "file")
 
 	// Delete flags
 	deleteCmd.Flags().StringVar(&locale, "locale", "", "locale code")
 	deleteCmd.Flags().StringVar(&imageType, "type", "", "image type")
 	deleteCmd.Flags().StringVar(&imageID, "id", "", "image ID to delete")
 	deleteCmd.Flags().Bool("confirm", false, "confirm deletion")
-	deleteCmd.MarkFlagRequired("locale")
-	deleteCmd.MarkFlagRequired("type")
-	deleteCmd.MarkFlagRequired("id")
+	cli.MustMarkFlagRequired(deleteCmd, "locale")
+	cli.MustMarkFlagRequired(deleteCmd, "type")
+	cli.MustMarkFlagRequired(deleteCmd, "id")
 
 	// Delete all flags
 	deleteAllCmd.Flags().StringVar(&locale, "locale", "", "locale code")
 	deleteAllCmd.Flags().StringVar(&imageType, "type", "", "image type")
 	deleteAllCmd.Flags().Bool("confirm", false, "confirm deletion")
-	deleteAllCmd.MarkFlagRequired("locale")
-	deleteAllCmd.MarkFlagRequired("type")
+	cli.MustMarkFlagRequired(deleteAllCmd, "locale")
+	cli.MustMarkFlagRequired(deleteAllCmd, "type")
 
 	// Sync flags
 	syncCmd.Flags().StringVar(&syncDir, "dir", "", "directory containing images")
-	syncCmd.MarkFlagRequired("dir")
+	cli.MustMarkFlagRequired(syncCmd, "dir")
 
 	ImagesCmd.AddCommand(listCmd)
 	ImagesCmd.AddCommand(uploadCmd)
@@ -170,7 +170,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	images, err := edit.Images().List(client.GetPackageName(), edit.ID(), locale, imageType).Context(edit.Context()).Do()
 	if err != nil {
@@ -234,7 +236,9 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	output.PrintInfo("Uploading: %s (%d bytes)", filepath.Base(absPath), info.Size())
 
@@ -444,10 +448,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 				}
 
 				_, err = edit.Images().Upload(client.GetPackageName(), edit.ID(), localeName, typeName).Media(file).Context(ctx).Do()
-				file.Close()
+				closeErr := file.Close()
 
 				if err != nil {
 					failures = append(failures, fmt.Sprintf("%s/%s/%s: %v", localeName, typeName, filepath.Base(localFile), err))
+					continue
+				}
+				if closeErr != nil {
+					failures = append(failures, fmt.Sprintf("%s/%s/%s: failed to close file: %v", localeName, typeName, filepath.Base(localFile), closeErr))
 					continue
 				}
 

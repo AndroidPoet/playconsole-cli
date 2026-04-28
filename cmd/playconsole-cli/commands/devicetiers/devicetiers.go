@@ -51,10 +51,10 @@ var (
 
 func init() {
 	getCmd.Flags().Int64Var(&configID, "config-id", 0, "device tier config ID")
-	getCmd.MarkFlagRequired("config-id")
+	cli.MustMarkFlagRequired(getCmd, "config-id")
 
 	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with device tier config")
-	createCmd.MarkFlagRequired("file")
+	cli.MustMarkFlagRequired(createCmd, "file")
 
 	DeviceTiersCmd.AddCommand(listCmd)
 	DeviceTiersCmd.AddCommand(getCmd)

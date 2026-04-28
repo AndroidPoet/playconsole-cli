@@ -111,3 +111,17 @@ func CheckConfirm(cmd *cobra.Command) error {
 	}
 	return nil
 }
+
+// MustMarkFlagRequired marks a flag as required during command initialization.
+func MustMarkFlagRequired(cmd *cobra.Command, name string) {
+	if err := cmd.MarkFlagRequired(name); err != nil {
+		panic(fmt.Sprintf("failed to mark flag %q as required on %q: %v", name, cmd.Name(), err))
+	}
+}
+
+// MustMarkPersistentFlagRequired marks a persistent flag as required during command initialization.
+func MustMarkPersistentFlagRequired(cmd *cobra.Command, name string) {
+	if err := cmd.MarkPersistentFlagRequired(name); err != nil {
+		panic(fmt.Sprintf("failed to mark persistent flag %q as required on %q: %v", name, cmd.Name(), err))
+	}
+}

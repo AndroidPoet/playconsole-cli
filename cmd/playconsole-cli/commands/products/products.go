@@ -71,26 +71,26 @@ func init() {
 
 	// Get flags
 	getCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
-	getCmd.MarkFlagRequired("product-id")
+	cli.MustMarkFlagRequired(getCmd, "product-id")
 
 	// Create flags
 	createCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
 	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with product definition")
 	createCmd.Flags().StringVar(&title, "title", "", "product title")
 	createCmd.Flags().StringVar(&description, "description", "", "product description")
-	createCmd.MarkFlagRequired("product-id")
+	cli.MustMarkFlagRequired(createCmd, "product-id")
 
 	// Update flags
 	updateCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
 	updateCmd.Flags().StringVar(&filePath, "file", "", "JSON file with product definition")
 	updateCmd.Flags().StringVar(&title, "title", "", "product title")
 	updateCmd.Flags().StringVar(&description, "description", "", "product description")
-	updateCmd.MarkFlagRequired("product-id")
+	cli.MustMarkFlagRequired(updateCmd, "product-id")
 
 	// Delete flags
 	deleteCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
 	deleteCmd.Flags().Bool("confirm", false, "confirm deletion")
-	deleteCmd.MarkFlagRequired("product-id")
+	cli.MustMarkFlagRequired(deleteCmd, "product-id")
 
 	ProductsCmd.AddCommand(listCmd)
 	ProductsCmd.AddCommand(getCmd)

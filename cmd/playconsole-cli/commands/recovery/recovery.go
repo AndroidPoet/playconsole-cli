@@ -62,20 +62,20 @@ var (
 
 func init() {
 	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with recovery action definition")
-	createCmd.MarkFlagRequired("file")
+	cli.MustMarkFlagRequired(createCmd, "file")
 
 	deployCmd.Flags().Int64Var(&recoveryID, "recovery-id", 0, "recovery action ID")
 	deployCmd.Flags().Bool("confirm", false, "confirm destructive operation")
-	deployCmd.MarkFlagRequired("recovery-id")
+	cli.MustMarkFlagRequired(deployCmd, "recovery-id")
 
 	cancelCmd.Flags().Int64Var(&recoveryID, "recovery-id", 0, "recovery action ID")
 	cancelCmd.Flags().Bool("confirm", false, "confirm destructive operation")
-	cancelCmd.MarkFlagRequired("recovery-id")
+	cli.MustMarkFlagRequired(cancelCmd, "recovery-id")
 
 	addTargetingCmd.Flags().Int64Var(&recoveryID, "recovery-id", 0, "recovery action ID")
 	addTargetingCmd.Flags().StringVar(&filePath, "file", "", "JSON file with targeting definition")
-	addTargetingCmd.MarkFlagRequired("recovery-id")
-	addTargetingCmd.MarkFlagRequired("file")
+	cli.MustMarkFlagRequired(addTargetingCmd, "recovery-id")
+	cli.MustMarkFlagRequired(addTargetingCmd, "file")
 
 	RecoveryCmd.AddCommand(listCmd)
 	RecoveryCmd.AddCommand(createCmd)

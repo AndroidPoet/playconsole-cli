@@ -71,15 +71,15 @@ var rolePermissions = map[string][]string{
 
 func init() {
 	UsersCmd.PersistentFlags().StringVar(&developerID, "developer", "", "developer account ID")
-	UsersCmd.MarkPersistentFlagRequired("developer")
+	cli.MustMarkPersistentFlagRequired(UsersCmd, "developer")
 
 	grantCmd.Flags().StringVar(&email, "email", "", "user email")
 	grantCmd.Flags().StringVar(&role, "role", "releaseManager", "role: admin, releaseManager, appOwner")
-	grantCmd.MarkFlagRequired("email")
+	cli.MustMarkFlagRequired(grantCmd, "email")
 
 	revokeCmd.Flags().StringVar(&email, "email", "", "user email")
 	revokeCmd.Flags().Bool("confirm", false, "confirm revocation")
-	revokeCmd.MarkFlagRequired("email")
+	cli.MustMarkFlagRequired(revokeCmd, "email")
 
 	UsersCmd.AddCommand(listCmd)
 	UsersCmd.AddCommand(grantCmd)

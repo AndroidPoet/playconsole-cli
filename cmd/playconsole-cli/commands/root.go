@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli/commands/initcmd"
@@ -109,20 +110,20 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "preview changes without applying")
 
 	// Bind to viper
-	viper.BindPFlag("package", rootCmd.PersistentFlags().Lookup("package"))
-	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
-	viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
-	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
+	mustBindPFlag("package", rootCmd.PersistentFlags().Lookup("package"))
+	mustBindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
+	mustBindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
+	mustBindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
+	mustBindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
 
 	// Environment variable bindings
-	viper.BindEnv("package", "GPC_PACKAGE")
-	viper.BindEnv("profile", "GPC_PROFILE")
-	viper.BindEnv("output", "GPC_OUTPUT")
-	viper.BindEnv("debug", "GPC_DEBUG")
-	viper.BindEnv("timeout", "GPC_TIMEOUT")
-	viper.BindEnv("credentials_path", "GPC_CREDENTIALS_PATH")
-	viper.BindEnv("credentials_b64", "GPC_CREDENTIALS_B64")
+	mustBindEnv("package", "GPC_PACKAGE")
+	mustBindEnv("profile", "GPC_PROFILE")
+	mustBindEnv("output", "GPC_OUTPUT")
+	mustBindEnv("debug", "GPC_DEBUG")
+	mustBindEnv("timeout", "GPC_TIMEOUT")
+	mustBindEnv("credentials_path", "GPC_CREDENTIALS_PATH")
+	mustBindEnv("credentials_b64", "GPC_CREDENTIALS_B64")
 
 	// Add version command
 	rootCmd.AddCommand(&cobra.Command{
@@ -139,6 +140,19 @@ func init() {
 // GetRootCmd returns the root command for adding subcommands
 func GetRootCmd() *cobra.Command {
 	return rootCmd
+}
+
+func mustBindPFlag(key string, flag *pflag.Flag) {
+	if err := viper.BindPFlag(key, flag); err != nil {
+		panic(fmt.Sprintf("failed to bind flag %q: %v", key, err))
+	}
+}
+
+func mustBindEnv(key string, envs ...string) {
+	args := append([]string{key}, envs...)
+	if err := viper.BindEnv(args...); err != nil {
+		panic(fmt.Sprintf("failed to bind env for %q: %v", key, err))
+	}
 }
 
 // ExitError exits with error

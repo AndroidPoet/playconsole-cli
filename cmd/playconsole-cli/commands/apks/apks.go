@@ -10,8 +10,8 @@ import (
 	"google.golang.org/api/androidpublisher/v3"
 	"google.golang.org/api/googleapi"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -46,7 +46,7 @@ func init() {
 	uploadCmd.Flags().StringVar(&filePath, "file", "", "path to APK file")
 	uploadCmd.Flags().StringVar(&trackName, "track", "", "track to assign")
 	uploadCmd.Flags().BoolVar(&autoCommit, "commit", true, "automatically commit the edit")
-	uploadCmd.MarkFlagRequired("file")
+	cli.MustMarkFlagRequired(uploadCmd, "file")
 
 	APKsCmd.AddCommand(uploadCmd)
 	APKsCmd.AddCommand(listCmd)
@@ -109,7 +109,9 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	output.PrintInfo("Uploading APK: %s (%d bytes)", filepath.Base(absPath), info.Size())
 
@@ -175,7 +177,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	apks, err := edit.APKs().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {

@@ -60,13 +60,13 @@ func init() {
 	// Get flags
 	getCmd.Flags().StringVar(&reviewID, "review-id", "", "review ID")
 	getCmd.Flags().StringVar(&translationLang, "translation-lang", "", "translate to this language")
-	getCmd.MarkFlagRequired("review-id")
+	cli.MustMarkFlagRequired(getCmd, "review-id")
 
 	// Reply flags
 	replyCmd.Flags().StringVar(&reviewID, "review-id", "", "review ID")
 	replyCmd.Flags().StringVar(&replyText, "text", "", "reply text")
-	replyCmd.MarkFlagRequired("review-id")
-	replyCmd.MarkFlagRequired("text")
+	cli.MustMarkFlagRequired(replyCmd, "review-id")
+	cli.MustMarkFlagRequired(replyCmd, "text")
 
 	ReviewsCmd.AddCommand(listCmd)
 	ReviewsCmd.AddCommand(getCmd)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/config"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
@@ -70,11 +71,11 @@ func init() {
 
 	// Switch flags
 	switchCmd.Flags().StringVar(&profileName, "name", "", "profile name to switch to")
-	switchCmd.MarkFlagRequired("name")
+	cli.MustMarkFlagRequired(switchCmd, "name")
 
 	// Delete flags
 	deleteCmd.Flags().StringVar(&profileName, "name", "", "profile name to delete")
-	deleteCmd.MarkFlagRequired("name")
+	cli.MustMarkFlagRequired(deleteCmd, "name")
 	deleteCmd.Flags().Bool("confirm", false, "confirm deletion")
 
 	AuthCmd.AddCommand(loginCmd)

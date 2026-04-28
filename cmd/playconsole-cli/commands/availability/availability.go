@@ -37,9 +37,9 @@ var updateCmd = &cobra.Command{
 }
 
 var (
-	track          string
-	countries      string
-	includeRest    bool
+	track       string
+	countries   string
+	includeRest bool
 )
 
 func init() {
@@ -49,7 +49,7 @@ func init() {
 	updateCmd.Flags().StringVar(&countries, "countries", "", "comma-separated country codes (e.g., US,GB,DE)")
 	updateCmd.Flags().BoolVar(&includeRest, "include-rest", true, "include rest of world")
 	updateCmd.Flags().Bool("confirm", false, "confirm destructive operation")
-	updateCmd.MarkFlagRequired("countries")
+	cli.MustMarkFlagRequired(updateCmd, "countries")
 
 	AvailabilityCmd.AddCommand(listCmd)
 	AvailabilityCmd.AddCommand(updateCmd)
@@ -79,7 +79,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	trackResp, err := edit.Tracks().Get(
 		client.GetPackageName(), edit.ID(), track,

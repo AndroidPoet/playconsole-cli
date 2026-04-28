@@ -30,7 +30,8 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -38,7 +39,8 @@ archives:
       {{- .Arch }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
@@ -92,6 +94,7 @@ nfpms:
   - id: packages
     package_name: playconsole-cli
     vendor: AndroidPoet
+    maintainer: AndroidPoet
     homepage: https://github.com/AndroidPoet/playconsole-cli
     description: "Fast, lightweight, and scriptable CLI for Google Play Console"
     license: MIT

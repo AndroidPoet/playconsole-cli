@@ -71,14 +71,14 @@ func Print(data interface{}) error {
 // PrintSuccess prints a success message (respects quiet mode)
 func PrintSuccess(format string, args ...interface{}) {
 	if !quietMode {
-		fmt.Fprintf(writer, format+"\n", args...)
+		_, _ = fmt.Fprintf(writer, format+"\n", args...)
 	}
 }
 
 // PrintInfo prints an info message (respects quiet mode)
 func PrintInfo(format string, args ...interface{}) {
 	if !quietMode {
-		fmt.Fprintf(writer, format+"\n", args...)
+		_, _ = fmt.Fprintf(writer, format+"\n", args...)
 	}
 }
 
@@ -108,20 +108,26 @@ func printJSON(data interface{}) error {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	fmt.Fprintln(writer, string(output))
+	if _, err := fmt.Fprintln(writer, string(output)); err != nil {
+		return fmt.Errorf("failed to write JSON output: %w", err)
+	}
 	return nil
 }
 
 func printTable(data interface{}) error {
 	w := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
-	defer w.Flush()
+	defer func() {
+		_ = w.Flush()
+	}()
 
 	v := reflect.ValueOf(data)
 
 	// Handle slice
 	if v.Kind() == reflect.Slice {
 		if v.Len() == 0 {
-			fmt.Fprintln(writer, "(no results)")
+			if _, err := fmt.Fprintln(writer, "(no results)"); err != nil {
+				return fmt.Errorf("failed to write table output: %w", err)
+			}
 			return nil
 		}
 
@@ -132,8 +138,12 @@ func printTable(data interface{}) error {
 		}
 
 		headers := getStructHeaders(first)
-		fmt.Fprintln(w, strings.Join(headers, "\t"))
-		fmt.Fprintln(w, strings.Repeat("-\t", len(headers)))
+		if _, err := fmt.Fprintln(w, strings.Join(headers, "\t")); err != nil {
+			return fmt.Errorf("failed to write table header: %w", err)
+		}
+		if _, err := fmt.Fprintln(w, strings.Repeat("-\t", len(headers))); err != nil {
+			return fmt.Errorf("failed to write table separator: %w", err)
+		}
 
 		// Print rows
 		for i := 0; i < v.Len(); i++ {
@@ -142,7 +152,9 @@ func printTable(data interface{}) error {
 				elem = elem.Elem()
 			}
 			values := getStructValues(elem)
-			fmt.Fprintln(w, strings.Join(values, "\t"))
+			if _, err := fmt.Fprintln(w, strings.Join(values, "\t")); err != nil {
+				return fmt.Errorf("failed to write table row: %w", err)
+			}
 		}
 	} else if v.Kind() == reflect.Struct || (v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct) {
 		// Single struct
@@ -152,7 +164,9 @@ func printTable(data interface{}) error {
 		headers := getStructHeaders(v)
 		values := getStructValues(v)
 		for i, h := range headers {
-			fmt.Fprintf(w, "%s:\t%s\n", h, values[i])
+			if _, err := fmt.Fprintf(w, "%s:\t%s\n", h, values[i]); err != nil {
+				return fmt.Errorf("failed to write table field: %w", err)
+			}
 		}
 	} else {
 		// Fallback to JSON
@@ -173,13 +187,19 @@ func printMinimal(data interface{}) error {
 			}
 			// Print first field value
 			if elem.Kind() == reflect.Struct && elem.NumField() > 0 {
-				fmt.Fprintln(writer, elem.Field(0).Interface())
+				if _, err := fmt.Fprintln(writer, elem.Field(0).Interface()); err != nil {
+					return fmt.Errorf("failed to write minimal output: %w", err)
+				}
 			}
 		}
 	} else if v.Kind() == reflect.Struct && v.NumField() > 0 {
-		fmt.Fprintln(writer, v.Field(0).Interface())
+		if _, err := fmt.Fprintln(writer, v.Field(0).Interface()); err != nil {
+			return fmt.Errorf("failed to write minimal output: %w", err)
+		}
 	} else {
-		fmt.Fprintln(writer, data)
+		if _, err := fmt.Fprintln(writer, data); err != nil {
+			return fmt.Errorf("failed to write minimal output: %w", err)
+		}
 	}
 
 	return nil
@@ -199,7 +219,9 @@ func printTSV(data interface{}) error {
 			first = first.Elem()
 		}
 		headers := getStructHeaders(first)
-		fmt.Fprintln(writer, strings.Join(headers, "\t"))
+		if _, err := fmt.Fprintln(writer, strings.Join(headers, "\t")); err != nil {
+			return fmt.Errorf("failed to write TSV header: %w", err)
+		}
 
 		// Print rows
 		for i := 0; i < v.Len(); i++ {
@@ -208,7 +230,9 @@ func printTSV(data interface{}) error {
 				elem = elem.Elem()
 			}
 			values := getStructValues(elem)
-			fmt.Fprintln(writer, strings.Join(values, "\t"))
+			if _, err := fmt.Fprintln(writer, strings.Join(values, "\t")); err != nil {
+				return fmt.Errorf("failed to write TSV row: %w", err)
+			}
 		}
 	} else {
 		return printJSON(data)
@@ -261,7 +285,9 @@ func printYAML(data interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
-	fmt.Fprint(writer, string(out))
+	if _, err := fmt.Fprint(writer, string(out)); err != nil {
+		return fmt.Errorf("failed to write YAML output: %w", err)
+	}
 	return nil
 }
 
@@ -272,19 +298,27 @@ func printMarkdown(data interface{}) error {
 	}
 
 	if len(headers) == 0 {
-		fmt.Fprintln(writer, "(no results)")
+		if _, err := fmt.Fprintln(writer, "(no results)"); err != nil {
+			return fmt.Errorf("failed to write markdown output: %w", err)
+		}
 		return nil
 	}
 
-	fmt.Fprintf(writer, "| %s |\n", strings.Join(headers, " | "))
+	if _, err := fmt.Fprintf(writer, "| %s |\n", strings.Join(headers, " | ")); err != nil {
+		return fmt.Errorf("failed to write markdown header: %w", err)
+	}
 	separator := make([]string, len(headers))
 	for i := range separator {
 		separator[i] = "---"
 	}
-	fmt.Fprintf(writer, "| %s |\n", strings.Join(separator, " | "))
+	if _, err := fmt.Fprintf(writer, "| %s |\n", strings.Join(separator, " | ")); err != nil {
+		return fmt.Errorf("failed to write markdown separator: %w", err)
+	}
 
 	for _, row := range rows {
-		fmt.Fprintf(writer, "| %s |\n", strings.Join(row, " | "))
+		if _, err := fmt.Fprintf(writer, "| %s |\n", strings.Join(row, " | ")); err != nil {
+			return fmt.Errorf("failed to write markdown row: %w", err)
+		}
 	}
 
 	return nil

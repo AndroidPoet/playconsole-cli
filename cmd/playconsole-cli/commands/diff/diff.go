@@ -34,16 +34,16 @@ func init() {
 
 // DiffResult represents the diff output
 type DiffResult struct {
-	Section  string      `json:"section"`
-	Status   string      `json:"status"`
-	Current  interface{} `json:"current,omitempty"`
+	Section string      `json:"section"`
+	Status  string      `json:"status"`
+	Current interface{} `json:"current,omitempty"`
 }
 
 // TrackSummary represents a track's current state
 type TrackSummary struct {
-	Track       string `json:"track"`
-	Status      string `json:"status,omitempty"`
-	VersionCode int64  `json:"version_code,omitempty"`
+	Track        string  `json:"track"`
+	Status       string  `json:"status,omitempty"`
+	VersionCode  int64   `json:"version_code,omitempty"`
 	UserFraction float64 `json:"user_fraction,omitempty"`
 }
 
@@ -74,7 +74,9 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	results := make([]DiffResult, 0)
 

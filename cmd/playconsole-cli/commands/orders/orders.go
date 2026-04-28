@@ -47,14 +47,14 @@ var (
 
 func init() {
 	getCmd.Flags().StringVar(&orderID, "order-id", "", "order ID (e.g., GPA.1234-5678)")
-	getCmd.MarkFlagRequired("order-id")
+	cli.MustMarkFlagRequired(getCmd, "order-id")
 
 	refundCmd.Flags().StringVar(&orderID, "order-id", "", "order ID to refund")
 	refundCmd.Flags().Bool("confirm", false, "confirm destructive operation")
-	refundCmd.MarkFlagRequired("order-id")
+	cli.MustMarkFlagRequired(refundCmd, "order-id")
 
 	batchGetCmd.Flags().StringVar(&orderIDs, "order-ids", "", "comma-separated order IDs")
-	batchGetCmd.MarkFlagRequired("order-ids")
+	cli.MustMarkFlagRequired(batchGetCmd, "order-ids")
 
 	OrdersCmd.AddCommand(getCmd)
 	OrdersCmd.AddCommand(refundCmd)

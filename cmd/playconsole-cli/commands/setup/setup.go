@@ -91,11 +91,16 @@ func runSetup(cmd *cobra.Command, args []string) {
 
 		switch input {
 		case "o", "open", "":
-			openBrowser(s.url)
+			if err := openBrowser(s.url); err != nil {
+				fmt.Printf("Warning: could not open browser: %v\n", err)
+			}
 			waitForUser(reader, "Press ENTER when you've completed this step...")
 		case "c", "copy":
-			copyToClipboard(s.url)
-			fmt.Println("✓ URL copied to clipboard")
+			if err := copyToClipboard(s.url); err != nil {
+				fmt.Printf("Warning: could not copy to clipboard: %v\n", err)
+			} else {
+				fmt.Println("✓ URL copied to clipboard")
+			}
 			waitForUser(reader, "Press ENTER when you've completed this step...")
 		case "s", "skip":
 			fmt.Println("→ Skipping...")
@@ -163,7 +168,9 @@ func printFinalStep(reader *bufio.Reader) {
 			credPath = promptForPath(reader)
 		} else {
 			var idx int
-			fmt.Sscanf(input, "%d", &idx)
+			if _, err := fmt.Sscanf(input, "%d", &idx); err != nil {
+				idx = 0
+			}
 			if idx >= 1 && idx <= len(jsonFiles) {
 				credPath = jsonFiles[idx-1]
 			} else {
@@ -181,7 +188,10 @@ func printFinalStep(reader *bufio.Reader) {
 
 	// Create config directory
 	configDir := filepath.Join(homeDir, ".config", "gpc")
-	os.MkdirAll(configDir, 0700)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		fmt.Printf("Error creating config directory: %v\n", err)
+		return
+	}
 
 	// Copy credentials
 	destPath := filepath.Join(configDir, "service-account.json")
@@ -193,7 +203,9 @@ func printFinalStep(reader *bufio.Reader) {
 	}
 
 	// Set permissions
-	os.Chmod(destPath, 0600)
+	if err := os.Chmod(destPath, 0600); err != nil {
+		fmt.Printf("Warning: could not set credentials permissions: %v\n", err)
+	}
 
 	fmt.Println()
 	fmt.Println("✓ Credentials saved to:", destPath)
@@ -283,8 +295,8 @@ func findJSONFiles(dir string) []string {
 		// Look for service account files
 		if strings.HasSuffix(name, ".json") &&
 			(strings.Contains(strings.ToLower(name), "service") ||
-			 strings.Contains(strings.ToLower(name), "key") ||
-			 strings.Contains(strings.ToLower(name), "credential")) {
+				strings.Contains(strings.ToLower(name), "key") ||
+				strings.Contains(strings.ToLower(name), "credential")) {
 			files = append(files, filepath.Join(dir, name))
 		}
 	}
@@ -306,13 +318,13 @@ func readInput(reader *bufio.Reader) string {
 
 func waitForUser(reader *bufio.Reader, msg string) {
 	fmt.Print("\n" + msg)
-	reader.ReadString('\n')
+	_, _ = reader.ReadString('\n')
 }
 
 func waitForUserSimple() {
 	fmt.Print("Press ENTER to begin...")
 	reader := bufio.NewReader(os.Stdin)
-	reader.ReadString('\n')
+	_, _ = reader.ReadString('\n')
 }
 
 func clearScreen() {
@@ -320,11 +332,11 @@ func clearScreen() {
 	case "darwin", "linux":
 		cmd := exec.Command("clear")
 		cmd.Stdout = os.Stdout
-		cmd.Run()
+		_ = cmd.Run()
 	case "windows":
 		cmd := exec.Command("cmd", "/c", "cls")
 		cmd.Stdout = os.Stdout
-		cmd.Run()
+		_ = cmd.Run()
 	}
 }
 
@@ -499,7 +511,10 @@ func runAutoSetup(cmd *cobra.Command) {
 			fmt.Println("    Project ID is required. Aborting.")
 			return
 		}
-		runGcloud("config", "set", "project", project)
+		if _, err := runGcloud("config", "set", "project", project); err != nil {
+			fmt.Printf("    Failed to set project: %v\n", err)
+			return
+		}
 		fmt.Printf("    Set project: %s\n", project)
 	} else {
 		fmt.Printf("✓ (%s)\n", project)
@@ -557,7 +572,10 @@ func runAutoSetup(cmd *cobra.Command) {
 		}
 	}
 
-	os.MkdirAll(configDir, 0700)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		fmt.Printf("    Error creating config directory: %v\n", err)
+		return
+	}
 	_, err = runGcloud("iam", "service-accounts", "keys", "create", keyPath,
 		"--iam-account", saEmail,
 		"--project", project)
@@ -566,7 +584,9 @@ func runAutoSetup(cmd *cobra.Command) {
 		fmt.Printf("    Error: %v\n", err)
 		return
 	}
-	os.Chmod(keyPath, 0600)
+	if err := os.Chmod(keyPath, 0600); err != nil {
+		fmt.Printf("    Warning: could not set key permissions: %v\n", err)
+	}
 	fmt.Println("✓")
 	fmt.Printf("    Saved to %s\n", keyPath)
 
@@ -584,9 +604,14 @@ step5:
 	fmt.Printf("      2. Find: %s\n", saEmail)
 	fmt.Println("      3. Click \"Grant access\" → set permissions → \"Invite user\"")
 	fmt.Println()
-	copyToClipboard(saEmail)
-	fmt.Println("    (Service account email copied to clipboard)")
-	openBrowser(playConsoleURL)
+	if err := copyToClipboard(saEmail); err != nil {
+		fmt.Printf("    Warning: could not copy service account email: %v\n", err)
+	} else {
+		fmt.Println("    (Service account email copied to clipboard)")
+	}
+	if err := openBrowser(playConsoleURL); err != nil {
+		fmt.Printf("    Warning: could not open browser: %v\n", err)
+	}
 	waitForUser(reader, "    Press ENTER when done...")
 
 	// --- Configure CLI profile ---

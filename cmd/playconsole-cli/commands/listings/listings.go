@@ -71,7 +71,7 @@ var (
 func init() {
 	// Get flags
 	getCmd.Flags().StringVar(&locale, "locale", "", "locale code (e.g., en-US)")
-	getCmd.MarkFlagRequired("locale")
+	cli.MustMarkFlagRequired(getCmd, "locale")
 
 	// Update flags
 	updateCmd.Flags().StringVar(&locale, "locale", "", "locale code")
@@ -79,11 +79,11 @@ func init() {
 	updateCmd.Flags().StringVar(&shortDesc, "short-description", "", "short description (80 chars)")
 	updateCmd.Flags().StringVar(&fullDesc, "full-description", "", "full description")
 	updateCmd.Flags().StringVar(&fullDescFile, "full-description-file", "", "file containing full description")
-	updateCmd.MarkFlagRequired("locale")
+	cli.MustMarkFlagRequired(updateCmd, "locale")
 
 	// Sync flags
 	syncCmd.Flags().StringVar(&syncDir, "dir", "", "directory containing metadata")
-	syncCmd.MarkFlagRequired("dir")
+	cli.MustMarkFlagRequired(syncCmd, "dir")
 
 	ListingsCmd.AddCommand(listCmd)
 	ListingsCmd.AddCommand(getCmd)
@@ -114,7 +114,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	listings, err := edit.Listings().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -153,7 +155,9 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	listing, err := edit.Listings().Get(client.GetPackageName(), edit.ID(), locale).Context(edit.Context()).Do()
 	if err != nil {

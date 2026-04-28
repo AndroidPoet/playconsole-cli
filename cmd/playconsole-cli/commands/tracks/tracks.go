@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/api/androidpublisher/v3"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -78,7 +78,7 @@ func init() {
 
 	// Get flags
 	getCmd.Flags().StringVar(&trackName, "track", "", "track name (internal, alpha, beta, production)")
-	getCmd.MarkFlagRequired("track")
+	cli.MustMarkFlagRequired(getCmd, "track")
 
 	// Update flags
 	updateCmd.Flags().StringVar(&trackName, "track", "", "track name")
@@ -88,23 +88,23 @@ func init() {
 	updateCmd.Flags().StringVar(&releaseNotes, "release-notes", "", "release notes text")
 	updateCmd.Flags().StringVar(&releaseNotesLang, "release-notes-lang", "en-US", "release notes language")
 	updateCmd.Flags().StringVar(&status, "status", "completed", "release status (draft, inProgress, halted, completed)")
-	updateCmd.MarkFlagRequired("track")
+	cli.MustMarkFlagRequired(updateCmd, "track")
 
 	// Promote flags
 	promoteCmd.Flags().StringVar(&fromTrack, "from", "", "source track")
 	promoteCmd.Flags().StringVar(&toTrack, "to", "", "destination track")
 	promoteCmd.Flags().Int64Var(&versionCode, "version-code", 0, "specific version code to promote (optional)")
 	promoteCmd.Flags().Float64Var(&rolloutPercentage, "rollout-percentage", 100, "rollout percentage")
-	promoteCmd.MarkFlagRequired("from")
-	promoteCmd.MarkFlagRequired("to")
+	cli.MustMarkFlagRequired(promoteCmd, "from")
+	cli.MustMarkFlagRequired(promoteCmd, "to")
 
 	// Halt flags
 	haltCmd.Flags().StringVar(&trackName, "track", "", "track name")
-	haltCmd.MarkFlagRequired("track")
+	cli.MustMarkFlagRequired(haltCmd, "track")
 
 	// Complete flags
 	completeCmd.Flags().StringVar(&trackName, "track", "", "track name")
-	completeCmd.MarkFlagRequired("track")
+	cli.MustMarkFlagRequired(completeCmd, "track")
 
 	TracksCmd.AddCommand(listCmd)
 	TracksCmd.AddCommand(getCmd)
@@ -116,11 +116,11 @@ func init() {
 
 // TrackInfo represents track information for output
 type TrackInfo struct {
-	Track        string   `json:"track"`
-	VersionCodes []int64  `json:"version_codes,omitempty"`
-	Status       string   `json:"status,omitempty"`
-	Rollout      float64  `json:"rollout,omitempty"`
-	ReleaseCount int      `json:"release_count"`
+	Track        string  `json:"track"`
+	VersionCodes []int64 `json:"version_codes,omitempty"`
+	Status       string  `json:"status,omitempty"`
+	Rollout      float64 `json:"rollout,omitempty"`
+	ReleaseCount int     `json:"release_count"`
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -138,7 +138,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	tracks, err := edit.Tracks().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -186,7 +188,9 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete()
+	defer func() {
+		_ = edit.Delete()
+	}()
 
 	track, err := edit.Tracks().Get(client.GetPackageName(), edit.ID(), trackName).Context(edit.Context()).Do()
 	if err != nil {

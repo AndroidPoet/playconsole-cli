@@ -61,19 +61,19 @@ func init() {
 	// Verify flags
 	verifyCmd.Flags().StringVar(&purchaseToken, "token", "", "purchase token")
 	verifyCmd.Flags().StringVar(&productID, "product-id", "", "product ID (for products)")
-	verifyCmd.MarkFlagRequired("token")
+	cli.MustMarkFlagRequired(verifyCmd, "token")
 
 	// Subscription status flags
 	subscriptionStatusCmd.Flags().StringVar(&purchaseToken, "token", "", "subscription token")
 	subscriptionStatusCmd.Flags().StringVar(&productID, "product-id", "", "subscription product ID")
-	subscriptionStatusCmd.MarkFlagRequired("token")
-	subscriptionStatusCmd.MarkFlagRequired("product-id")
+	cli.MustMarkFlagRequired(subscriptionStatusCmd, "token")
+	cli.MustMarkFlagRequired(subscriptionStatusCmd, "product-id")
 
 	// Acknowledge flags
 	acknowledgeCmd.Flags().StringVar(&purchaseToken, "token", "", "purchase token")
 	acknowledgeCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
-	acknowledgeCmd.MarkFlagRequired("token")
-	acknowledgeCmd.MarkFlagRequired("product-id")
+	cli.MustMarkFlagRequired(acknowledgeCmd, "token")
+	cli.MustMarkFlagRequired(acknowledgeCmd, "product-id")
 
 	// Voided list flags
 	voidedListCmd.Flags().StringVar(&startTime, "start-time", "", "start time (RFC3339)")

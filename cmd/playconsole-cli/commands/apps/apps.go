@@ -135,7 +135,9 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer edit.Delete() // Don't commit, just checking access
+	defer func() {
+		_ = edit.Delete() // Don't commit, just checking access
+	}()
 
 	// Get app details
 	ctx := edit.Context()

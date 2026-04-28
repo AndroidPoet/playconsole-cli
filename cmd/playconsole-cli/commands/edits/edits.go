@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
+	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -61,20 +61,20 @@ var editID string
 func init() {
 	// Get flags
 	getCmd.Flags().StringVar(&editID, "edit-id", "", "edit ID")
-	getCmd.MarkFlagRequired("edit-id")
+	cli.MustMarkFlagRequired(getCmd, "edit-id")
 
 	// Validate flags
 	validateCmd.Flags().StringVar(&editID, "edit-id", "", "edit ID")
-	validateCmd.MarkFlagRequired("edit-id")
+	cli.MustMarkFlagRequired(validateCmd, "edit-id")
 
 	// Commit flags
 	commitCmd.Flags().StringVar(&editID, "edit-id", "", "edit ID")
-	commitCmd.MarkFlagRequired("edit-id")
+	cli.MustMarkFlagRequired(commitCmd, "edit-id")
 
 	// Delete flags
 	deleteCmd.Flags().StringVar(&editID, "edit-id", "", "edit ID")
 	deleteCmd.Flags().Bool("confirm", false, "confirm deletion")
-	deleteCmd.MarkFlagRequired("edit-id")
+	cli.MustMarkFlagRequired(deleteCmd, "edit-id")
 
 	EditsCmd.AddCommand(createCmd)
 	EditsCmd.AddCommand(getCmd)
@@ -106,9 +106,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	output.PrintSuccess("Edit session created")
 	return output.Print(map[string]interface{}{
-		"edit_id":     edit.ID(),
-		"package":     cli.GetPackageName(),
-		"expires_in":  "1 hour",
+		"edit_id":    edit.ID(),
+		"package":    cli.GetPackageName(),
+		"expires_in": "1 hour",
 		"next_steps": []string{
 			"Make changes with --no-auto-commit flag",
 			fmt.Sprintf("Validate: gpc edits validate --edit-id %s", edit.ID()),
