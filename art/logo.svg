@@ -1,0 +1,24 @@
+<svg width="1200" height="400" viewBox="0 0 1200 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="400" fill="#F8F9FA"/>
+  <!-- Top accent bar -->
+  <rect width="1200" height="4" fill="url(#grad)" />
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="1200" y2="0">
+      <stop offset="0%" stop-color="#3DDC84"/>
+      <stop offset="50%" stop-color="#00ADD8"/>
+      <stop offset="100%" stop-color="#4285F4"/>
+    </linearGradient>
+  </defs>
+  <!-- Play Console icon representation -->
+  <g transform="translate(600, 130)">
+    <!-- Triangle play button shape -->
+    <polygon points="0,-50 55,30 -55,30" fill="#3DDC84" opacity="0.9"/>
+    <polygon points="0,-35 40,20 -40,20" fill="#2AB063" opacity="0.4"/>
+  </g>
+  <!-- Title -->
+  <text x="600" y="220" text-anchor="middle" fill="#1F2328" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="700" letter-spacing="-1">Play Console CLI</text>
+  <!-- Subtitle -->
+  <text x="600" y="258" text-anchor="middle" fill="#656D76" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="400" letter-spacing="0.3">Ship Android apps from your terminal</text>
+  <!-- Tagline -->
+  <text x="600" y="295" text-anchor="middle" fill="#00ADD8" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="500" letter-spacing="0.5">Fast • Scriptable • Release Automation</text>
+</svg>
