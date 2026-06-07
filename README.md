@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="art/logo.svg" width="800" alt="Play Console CLI">
+<img src="assets/logo.png" alt="Play Console CLI" width="150">
 
 # Play Console CLI
 
