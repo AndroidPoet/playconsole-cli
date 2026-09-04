@@ -430,6 +430,31 @@ func installGcloud() bool {
 		fmt.Println("    ✓ gcloud installed")
 		return true
 
+	case "windows":
+		if _, err := exec.LookPath("winget"); err != nil {
+			fmt.Println("    winget was not found.")
+			fmt.Println("    Install Google Cloud CLI manually: https://cloud.google.com/sdk/docs/install-sdk#windows")
+			return false
+		}
+
+		fmt.Println("    Installing via winget...")
+		cmd := exec.Command("winget", "install",
+			"--id", "Google.CloudSDK",
+			"--exact",
+			"--source", "winget",
+			"--silent",
+			"--accept-source-agreements",
+			"--accept-package-agreements")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("    winget install failed: %v\n", err)
+			fmt.Println("    Install Google Cloud CLI manually: https://cloud.google.com/sdk/docs/install-sdk#windows")
+			return false
+		}
+		fmt.Println("    ✓ gcloud installed via winget")
+		return true
+
 	default:
 		fmt.Println("    Auto-install not supported on this platform.")
 		fmt.Println("    Install manually: https://cloud.google.com/sdk/install")

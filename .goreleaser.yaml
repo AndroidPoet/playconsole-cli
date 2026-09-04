@@ -117,3 +117,7 @@ release:
     ```bash
     curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
     ```
+    On Windows (PowerShell):
+    ```powershell
+    irm https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.ps1 | iex
+    ```

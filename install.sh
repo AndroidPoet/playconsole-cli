@@ -20,10 +20,11 @@ error() { echo -e "${RED}Error:${NC} $1"; exit 1; }
 
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+WINDOWS_INSTALL=false
 case "$OS" in
     darwin) OS="darwin" ;;
     linux) OS="linux" ;;
-    mingw*|msys*|cygwin*) OS="windows" ;;
+    mingw*|msys*|cygwin*) OS="windows"; WINDOWS_INSTALL=true ;;
     *) error "Unsupported OS: $OS" ;;
 esac
 
@@ -86,9 +87,17 @@ if [ -z "$DOWNLOAD_URL" ]; then
     fi
 
     cd playconsole-cli
-    go build -o playconsole-cli ./cmd/playconsole-cli
+    if [ "$WINDOWS_INSTALL" = true ]; then
+        go build -o playconsole-cli.exe ./cmd/playconsole-cli
+    else
+        go build -o playconsole-cli ./cmd/playconsole-cli
+    fi
     mkdir -p "$INSTALL_DIR"
-    mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
+    if [ "$WINDOWS_INSTALL" = true ]; then
+        mv playconsole-cli.exe "$INSTALL_DIR/playconsole-cli.exe"
+    else
+        mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
+    fi
     cd /
     rm -rf "$TMPDIR"
 else
@@ -112,19 +121,30 @@ else
 
     # Install
     mkdir -p "$INSTALL_DIR"
-    mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
+    if [ "$WINDOWS_INSTALL" = true ]; then
+        mv playconsole-cli.exe "$INSTALL_DIR/playconsole-cli.exe"
+    else
+        mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
+    fi
 
     cd /
     rm -rf "$TMPDIR"
 fi
 
-chmod +x "$INSTALL_DIR/playconsole-cli"
-
-# Create gpc alias
-ln -sf "$INSTALL_DIR/playconsole-cli" "$INSTALL_DIR/gpc"
-
-info "Installed playconsole-cli to $INSTALL_DIR/playconsole-cli"
-info "Created alias: gpc -> playconsole-cli"
+if [ "$WINDOWS_INSTALL" = true ]; then
+    # Symlinks may require Developer Mode or elevation on Windows. A copy works
+    # in Git Bash without changing the user's system policy.
+    cp "$INSTALL_DIR/playconsole-cli.exe" "$INSTALL_DIR/gpc.exe"
+    BINARY_PATH="$INSTALL_DIR/playconsole-cli.exe"
+    info "Installed playconsole-cli to $BINARY_PATH"
+    info "Created alias: gpc.exe"
+else
+    chmod +x "$INSTALL_DIR/playconsole-cli"
+    ln -sf "$INSTALL_DIR/playconsole-cli" "$INSTALL_DIR/gpc"
+    BINARY_PATH="$INSTALL_DIR/playconsole-cli"
+    info "Installed playconsole-cli to $BINARY_PATH"
+    info "Created alias: gpc -> playconsole-cli"
+fi
 
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^$INSTALL_DIR$"; then
@@ -135,10 +155,10 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^$INSTALL_DIR$"; then
 fi
 
 # Verify installation
-if "$INSTALL_DIR/playconsole-cli" version &>/dev/null; then
+if "$BINARY_PATH" version &>/dev/null; then
     info "Installation complete!"
     echo ""
-    "$INSTALL_DIR/playconsole-cli" version
+    "$BINARY_PATH" version
 else
-    warn "Installed but could not verify. Try running: $INSTALL_DIR/playconsole-cli --help"
+    warn "Installed but could not verify. Try running: $BINARY_PATH --help"
 fi

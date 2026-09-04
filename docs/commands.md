@@ -364,8 +364,8 @@ gpc auth login --credentials path/to/service-account.json
 gpc auth login --credentials-b64 "base64_string"
 gpc auth list                           # List profiles
 gpc auth current                        # Show active profile
-gpc auth switch --profile production    # Switch profile
-gpc auth delete --profile old-profile
+gpc auth switch --name production       # Switch profile
+gpc auth delete --name old-profile
 ```
 
 ### setup
