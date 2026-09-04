@@ -59,6 +59,16 @@ make build
 ./playconsole-cli version
 ```
 
+On Windows, use PowerShell instead of `make`:
+
+```powershell
+git clone https://github.com/AndroidPoet/playconsole-cli.git
+Set-Location playconsole-cli
+go build -o bin/playconsole-cli.exe ./cmd/playconsole-cli
+go test ./...
+.\bin\playconsole-cli.exe version
+```
+
 ## Code Style
 
 - Run `go fmt` before committing

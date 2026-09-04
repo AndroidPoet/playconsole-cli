@@ -41,7 +41,7 @@ gpc bundles upload --file app.aab --track production
 ## 📦 Installation
 
 ```bash
-# Homebrew (recommended)
+# Homebrew (macOS)
 brew tap AndroidPoet/tap && brew install playconsole-cli
 
 # Install script (Linux/macOS)
@@ -50,6 +50,25 @@ curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/in
 # Build from source
 git clone https://github.com/AndroidPoet/playconsole-cli.git
 cd playconsole-cli && make build
+```
+
+### Windows
+
+From PowerShell, install the latest pre-built release for your Windows architecture:
+
+```powershell
+irm https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.ps1 | iex
+```
+
+The installer places `playconsole-cli.exe` and the `gpc.exe` alias in
+`%LOCALAPPDATA%\Programs\playconsole-cli` and adds that directory to your user `PATH`.
+Open a new terminal after installation. To install a specific release or choose another
+directory, set `GPC_VERSION` or `GPC_INSTALL_DIR` before running the command.
+
+To build from source on Windows, install Go and run:
+
+```powershell
+go install github.com/AndroidPoet/playconsole-cli/cmd/playconsole-cli@latest
 ```
 
 After install, you can use either `playconsole-cli` or the shorter alias `gpc`.
@@ -65,7 +84,7 @@ gpc setup --auto
 ```
 
 That's it. This will:
-- Install `gcloud` if needed (via Homebrew on macOS, or curl on Linux)
+- Install `gcloud` if needed (via Homebrew on macOS, curl on Linux, or winget on Windows; Windows may show a UAC prompt)
 - Log you into Google Cloud
 - Create a service account and download credentials
 - Open Play Console for the one manual step (granting access)
