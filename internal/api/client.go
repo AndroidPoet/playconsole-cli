@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"golang.org/x/oauth2/google"
@@ -28,13 +29,14 @@ type debugTransport struct {
 }
 
 func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	fmt.Printf("DEBUG: %s %s\n", req.Method, req.URL)
+	// Debug output goes to stderr so it never corrupts machine-readable stdout.
+	fmt.Fprintf(os.Stderr, "DEBUG: %s %s\n", req.Method, req.URL)
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		fmt.Printf("DEBUG: request failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "DEBUG: request failed: %v\n", err)
 		return nil, err
 	}
-	fmt.Printf("DEBUG: response %s\n", resp.Status)
+	fmt.Fprintf(os.Stderr, "DEBUG: response %s\n", resp.Status)
 	return resp, nil
 }
 
@@ -157,12 +159,18 @@ func (c *Client) SystemAPKs() *androidpublisher.SystemapksService {
 	return c.service.Systemapks
 }
 
-// Edit represents an active edit session
+// Edit represents an active edit session.
+//
+// Lifecycle: an edit created with CreateEdit is discarded on Close unless it
+// was committed or Keep was called. An edit obtained with GetEdit belongs to
+// the caller and is never discarded implicitly.
 type Edit struct {
-	client *Client
-	editID string
-	ctx    context.Context
-	cancel context.CancelFunc
+	client    *Client
+	editID    string
+	ctx       context.Context
+	cancel    context.CancelFunc
+	committed bool
+	keep      bool
 }
 
 // CreateEdit creates a new edit session
@@ -198,6 +206,7 @@ func (c *Client) GetEdit(editID string) (*Edit, error) {
 		editID: edit.Id,
 		ctx:    ctx,
 		cancel: cancel,
+		keep:   true,
 	}, nil
 }
 
@@ -226,6 +235,7 @@ func (e *Edit) Commit() error {
 	if err != nil {
 		return fmt.Errorf("failed to commit edit: %w", err)
 	}
+	e.committed = true
 	return nil
 }
 
@@ -235,11 +245,27 @@ func (e *Edit) Delete() error {
 	if err != nil {
 		return fmt.Errorf("failed to delete edit: %w", err)
 	}
+	e.keep = true // nothing left to discard
 	return nil
 }
 
-// Close releases resources
+// Keep marks the edit as intentionally left open on the server, so Close
+// will not discard it (used by --commit=false flows).
+func (e *Edit) Keep() {
+	e.keep = true
+}
+
+// Close releases resources. An uncommitted edit that was not explicitly kept
+// is deleted so that failed or read-only commands do not leave stale edits
+// behind. Deletion uses a fresh short context because the edit context may
+// already be expired or cancelled.
 func (e *Edit) Close() {
+	if !e.committed && !e.keep {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_ = e.client.service.Edits.Delete(e.client.packageName, e.editID).Context(ctx).Do()
+		cancel()
+		e.keep = true
+	}
 	e.cancel()
 }
 

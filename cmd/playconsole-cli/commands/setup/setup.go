@@ -87,7 +87,7 @@ func runSetup(cmd *cobra.Command, args []string) {
 		fmt.Println("  [q] Quit setup")
 		fmt.Print("\nChoice [o/c/s/q]: ")
 
-		input := readInput(reader)
+		input := readChoice(reader)
 
 		switch input {
 		case "o", "open", "":
@@ -163,7 +163,7 @@ func printFinalStep(reader *bufio.Reader) {
 		fmt.Println("  [m] Enter path manually")
 		fmt.Print("\nSelect file number or 'm': ")
 
-		input := readInput(reader)
+		input := readChoice(reader)
 		if input == "m" {
 			credPath = promptForPath(reader)
 		} else {
@@ -311,9 +311,16 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, data, 0600)
 }
 
+// readInput returns the user's line verbatim (trimmed). Paths, package names
+// and project IDs are case-sensitive, so no case folding happens here.
 func readInput(reader *bufio.Reader) string {
 	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(strings.ToLower(input))
+	return strings.TrimSpace(input)
+}
+
+// readChoice reads a menu selection and normalises it for comparison.
+func readChoice(reader *bufio.Reader) string {
+	return strings.ToLower(readInput(reader))
 }
 
 func waitForUser(reader *bufio.Reader, msg string) {
@@ -454,7 +461,7 @@ func runAutoSetup(cmd *cobra.Command) {
 		fmt.Println("not found")
 		fmt.Println()
 		fmt.Print("    Install gcloud now? [Y/n]: ")
-		if input := readInput(reader); input == "n" || input == "no" {
+		if input := readChoice(reader); input == "n" || input == "no" {
 			fmt.Println()
 			fmt.Println("Run 'gpc setup' without --auto for the manual wizard.")
 			return
@@ -566,7 +573,7 @@ func runAutoSetup(cmd *cobra.Command) {
 		fmt.Println()
 		fmt.Printf("    Credentials already exist at %s\n", keyPath)
 		fmt.Print("    Overwrite? [y/N]: ")
-		if input := readInput(reader); input != "y" && input != "yes" {
+		if input := readChoice(reader); input != "y" && input != "yes" {
 			fmt.Println("    Keeping existing credentials.")
 			goto step5
 		}

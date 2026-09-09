@@ -1,9 +1,10 @@
 package reports
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
-	"github.com/AndroidPoet/playconsole-cli/internal/cli"
 	"github.com/AndroidPoet/playconsole-cli/internal/output"
 )
 
@@ -48,6 +49,9 @@ type ReportInfo struct {
 	Access      string `json:"access"`
 }
 
+// cliPlaceholder is replaced with the running binary's name in Access hints
+const cliPlaceholder = "{cli}"
+
 // AvailableReports lists all available report types
 var AvailableReports = []ReportInfo{
 	{
@@ -62,21 +66,21 @@ var AvailableReports = []ReportInfo{
 		Description: "Crash reports with stack traces",
 		Frequency:   "Real-time",
 		Format:      "JSON via Vitals API",
-		Access:      "gpc vitals crashes",
+		Access:      cliPlaceholder + " vitals crashes",
 	},
 	{
 		Type:        "anr",
 		Description: "ANR (Application Not Responding) reports",
 		Frequency:   "Real-time",
 		Format:      "JSON via Vitals API",
-		Access:      "gpc vitals anr",
+		Access:      cliPlaceholder + " vitals anr",
 	},
 	{
 		Type:        "reviews",
 		Description: "User reviews and ratings",
 		Frequency:   "Real-time",
 		Format:      "JSON",
-		Access:      "gpc reviews list",
+		Access:      cliPlaceholder + " reviews list",
 	},
 	{
 		Type:        "ratings",
@@ -108,12 +112,20 @@ var AvailableReports = []ReportInfo{
 	},
 }
 
-func runList(cmd *cobra.Command, args []string) error {
-	if err := cli.RequirePackage(cmd); err != nil {
-		return err
+// reportsFor returns the report list with Access hints resolved against the
+// name the CLI was invoked as.
+func reportsFor(cmd *cobra.Command) []ReportInfo {
+	name := cmd.Root().Name()
+	reports := make([]ReportInfo, 0, len(AvailableReports))
+	for _, r := range AvailableReports {
+		r.Access = strings.ReplaceAll(r.Access, cliPlaceholder, name)
+		reports = append(reports, r)
 	}
+	return reports
+}
 
-	reports := AvailableReports
+func runList(cmd *cobra.Command, args []string) error {
+	reports := reportsFor(cmd)
 
 	// Filter by type if specified
 	if reportType != "" {
@@ -130,5 +142,5 @@ func runList(cmd *cobra.Command, args []string) error {
 }
 
 func runTypes(cmd *cobra.Command, args []string) error {
-	return output.Print(AvailableReports)
+	return output.Print(reportsFor(cmd))
 }

@@ -68,17 +68,21 @@ func Print(data interface{}) error {
 	}
 }
 
+// Human-readable status messages go to stderr so that stdout only ever
+// carries the machine-readable payload printed by Print. This keeps
+// `gpc ... | jq` working even when a command logs progress.
+
 // PrintSuccess prints a success message (respects quiet mode)
 func PrintSuccess(format string, args ...interface{}) {
 	if !quietMode {
-		_, _ = fmt.Fprintf(writer, format+"\n", args...)
+		_, _ = fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
 }
 
 // PrintInfo prints an info message (respects quiet mode)
 func PrintInfo(format string, args ...interface{}) {
 	if !quietMode {
-		_, _ = fmt.Fprintf(writer, format+"\n", args...)
+		_, _ = fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
 }
 

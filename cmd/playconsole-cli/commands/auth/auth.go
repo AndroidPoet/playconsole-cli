@@ -2,9 +2,11 @@ package auth
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -95,22 +97,30 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("only one of --credentials or --credentials-base64 should be specified")
 	}
 
-	// Validate credentials file exists
+	// Validate credentials file exists and looks like a service account key
 	if credentialsPath != "" {
 		absPath, err := filepath.Abs(credentialsPath)
 		if err != nil {
 			return fmt.Errorf("invalid credentials path: %w", err)
 		}
-		if _, err := os.Stat(absPath); err != nil {
+		data, err := os.ReadFile(absPath)
+		if err != nil {
 			return fmt.Errorf("credentials file not found: %s", absPath)
+		}
+		if err := validateServiceAccountJSON(data); err != nil {
+			return fmt.Errorf("%s: %w", absPath, err)
 		}
 		credentialsPath = absPath
 	}
 
 	// Validate base64 credentials
 	if credentialsB64 != "" {
-		if _, err := base64.StdEncoding.DecodeString(credentialsB64); err != nil {
+		data, err := base64.StdEncoding.DecodeString(credentialsB64)
+		if err != nil {
 			return fmt.Errorf("invalid base64 credentials: %w", err)
+		}
+		if err := validateServiceAccountJSON(data); err != nil {
+			return fmt.Errorf("--credentials-base64: %w", err)
 		}
 	}
 
@@ -136,6 +146,26 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		"credentials":     credentialsPath,
 		"default_package": defaultPackage,
 	})
+}
+
+// validateServiceAccountJSON rejects files that are not a Google service
+// account key before they are persisted into a profile.
+func validateServiceAccountJSON(data []byte) error {
+	var sa struct {
+		Type        string `json:"type"`
+		ClientEmail string `json:"client_email"`
+		PrivateKey  string `json:"private_key"`
+	}
+	if err := json.Unmarshal(data, &sa); err != nil {
+		return fmt.Errorf("credentials are not valid JSON: %w", err)
+	}
+	if sa.Type != "service_account" {
+		return fmt.Errorf("credentials must be a service account key (type %q, expected \"service_account\")", sa.Type)
+	}
+	if sa.ClientEmail == "" || sa.PrivateKey == "" {
+		return fmt.Errorf("credentials are missing client_email or private_key")
+	}
+	return nil
 }
 
 func runSwitch(cmd *cobra.Command, args []string) error {
@@ -189,8 +219,8 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(profiles) == 0 {
 		output.PrintInfo("No profiles configured. Run 'gpc auth login' to add one.")
-		return nil
 	}
+	sort.Slice(profiles, func(i, j int) bool { return profiles[i].Name < profiles[j].Name })
 
 	return output.Print(profiles)
 }
@@ -219,11 +249,23 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("use --confirm to delete profile '%s'", profileName)
 	}
 
+	cfg := config.GetConfig()
+	if _, ok := cfg.Profiles[profileName]; !ok {
+		return fmt.Errorf("profile '%s' not found. Use 'gpc auth list' to see available profiles", profileName)
+	}
+
 	config.DeleteProfile(profileName)
+	// Do not leave the default pointing at a profile that no longer exists.
+	if cfg.DefaultProfile == profileName {
+		config.SetDefaultProfile("default")
+	}
 	if err := config.Save(); err != nil {
 		return err
 	}
 
 	output.PrintSuccess("Profile '%s' deleted", profileName)
-	return nil
+	return output.Print(map[string]interface{}{
+		"profile": profileName,
+		"deleted": true,
+	})
 }

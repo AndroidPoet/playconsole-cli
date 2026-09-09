@@ -21,7 +21,7 @@ when you need manual control over the edit lifecycle.
 
 Workflow:
   1. gpc edits create    - Start a new edit session
-  2. Make changes (uploads, listing updates, etc.) with --no-auto-commit
+  2. Make changes (e.g. 'gpc bundles upload --commit=false')
   3. gpc edits validate  - Validate changes before committing
   4. gpc edits commit    - Commit changes to make them live`,
 }
@@ -110,7 +110,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		"package":    cli.GetPackageName(),
 		"expires_in": "1 hour",
 		"next_steps": []string{
-			"Make changes with --no-auto-commit flag",
+			"Upload with --commit=false to keep the edit open",
 			fmt.Sprintf("Validate: gpc edits validate --edit-id %s", edit.ID()),
 			fmt.Sprintf("Commit: gpc edits commit --edit-id %s", edit.ID()),
 		},

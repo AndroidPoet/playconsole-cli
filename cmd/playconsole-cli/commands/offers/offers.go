@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -72,6 +74,7 @@ var (
 	basePlanID string
 	offerID    string
 	filePath   string
+	updateMask string
 )
 
 func init() {
@@ -92,6 +95,7 @@ func init() {
 	// Create flags
 	createCmd.Flags().StringVar(&productID, "product-id", "", "subscription product ID")
 	createCmd.Flags().StringVar(&basePlanID, "base-plan", "", "base plan ID")
+	createCmd.Flags().StringVar(&offerID, "offer-id", "", "offer ID (overrides offerId in file)")
 	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with offer definition")
 	cli.MustMarkFlagRequired(createCmd, "product-id")
 	cli.MustMarkFlagRequired(createCmd, "base-plan")
@@ -102,6 +106,8 @@ func init() {
 	updateCmd.Flags().StringVar(&basePlanID, "base-plan", "", "base plan ID")
 	updateCmd.Flags().StringVar(&offerID, "offer-id", "", "offer ID")
 	updateCmd.Flags().StringVar(&filePath, "file", "", "JSON file with offer definition")
+	updateCmd.Flags().StringVar(&updateMask, "update-mask", "", "comma-separated fields to update (default: top-level keys in file)")
+	updateCmd.Flags().Bool("confirm", false, "confirm pricing change")
 	cli.MustMarkFlagRequired(updateCmd, "product-id")
 	cli.MustMarkFlagRequired(updateCmd, "base-plan")
 	cli.MustMarkFlagRequired(updateCmd, "offer-id")
@@ -120,6 +126,7 @@ func init() {
 	activateCmd.Flags().StringVar(&productID, "product-id", "", "subscription product ID")
 	activateCmd.Flags().StringVar(&basePlanID, "base-plan", "", "base plan ID")
 	activateCmd.Flags().StringVar(&offerID, "offer-id", "", "offer ID")
+	activateCmd.Flags().Bool("confirm", false, "confirm pricing change")
 	cli.MustMarkFlagRequired(activateCmd, "product-id")
 	cli.MustMarkFlagRequired(activateCmd, "base-plan")
 	cli.MustMarkFlagRequired(activateCmd, "offer-id")
@@ -128,6 +135,7 @@ func init() {
 	deactivateCmd.Flags().StringVar(&productID, "product-id", "", "subscription product ID")
 	deactivateCmd.Flags().StringVar(&basePlanID, "base-plan", "", "base plan ID")
 	deactivateCmd.Flags().StringVar(&offerID, "offer-id", "", "offer ID")
+	deactivateCmd.Flags().Bool("confirm", false, "confirm pricing change")
 	cli.MustMarkFlagRequired(deactivateCmd, "product-id")
 	cli.MustMarkFlagRequired(deactivateCmd, "base-plan")
 	cli.MustMarkFlagRequired(deactivateCmd, "offer-id")
@@ -163,27 +171,27 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	resp, err := client.Monetization().Subscriptions.BasePlans.Offers.List(
+	result := make([]OfferInfo, 0)
+	err = client.Monetization().Subscriptions.BasePlans.Offers.List(
 		client.GetPackageName(), productID, basePlanID,
-	).Context(ctx).Do()
+	).Pages(ctx, func(resp *androidpublisher.ListSubscriptionOffersResponse) error {
+		for _, o := range resp.SubscriptionOffers {
+			result = append(result, OfferInfo{
+				OfferID:    o.OfferId,
+				BasePlanID: o.BasePlanId,
+				ProductID:  o.ProductId,
+				State:      o.State,
+				Phases:     len(o.Phases),
+			})
+		}
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list offers: %w", err)
 	}
 
-	if len(resp.SubscriptionOffers) == 0 {
+	if len(result) == 0 {
 		output.PrintInfo("No offers found for base plan '%s'", basePlanID)
-		return nil
-	}
-
-	result := make([]OfferInfo, 0, len(resp.SubscriptionOffers))
-	for _, o := range resp.SubscriptionOffers {
-		result = append(result, OfferInfo{
-			OfferID:    o.OfferId,
-			BasePlanID: o.BasePlanId,
-			ProductID:  o.ProductId,
-			State:      o.State,
-			Phases:     len(o.Phases),
-		})
 	}
 
 	return output.Print(result)
@@ -227,8 +235,15 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
+	if offerID != "" {
+		offer.OfferId = offerID
+	}
+	if offer.OfferId == "" {
+		return fmt.Errorf("offer ID required: set offerId in the file or use --offer-id")
+	}
+
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would create offer for base plan '%s'", basePlanID)
+		output.PrintInfo("Dry run: would create offer '%s' for base plan '%s'", offer.OfferId, basePlanID)
 		return output.Print(offer)
 	}
 
@@ -242,7 +257,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	created, err := client.Monetization().Subscriptions.BasePlans.Offers.Create(
 		client.GetPackageName(), productID, basePlanID, &offer,
-	).RegionsVersionVersion("2022/02").Context(ctx).Do()
+	).OfferId(offer.OfferId).RegionsVersionVersion("2022/02").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("failed to create offer: %w", err)
 	}
@@ -251,8 +266,32 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	return output.Print(created)
 }
 
+// deriveUpdateMask builds a field mask from the top-level keys of an offer
+// JSON document, excluding the identifier fields that cannot be patched.
+func deriveUpdateMask(data []byte) (string, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return "", fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		switch k {
+		case "packageName", "productId", "basePlanId", "offerId":
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ","), nil
+}
+
 func runUpdate(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
+		return err
+	}
+
+	if err := cli.CheckConfirm(cmd); err != nil {
 		return err
 	}
 
@@ -266,8 +305,19 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
+	mask := updateMask
+	if mask == "" {
+		mask, err = deriveUpdateMask(data)
+		if err != nil {
+			return err
+		}
+	}
+	if mask == "" {
+		return fmt.Errorf("update mask is empty: file has no updatable fields, use --update-mask")
+	}
+
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would update offer '%s'", offerID)
+		output.PrintInfo("Dry run: would update offer '%s' (fields: %s)", offerID, mask)
 		return output.Print(offer)
 	}
 
@@ -281,7 +331,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	updated, err := client.Monetization().Subscriptions.BasePlans.Offers.Patch(
 		client.GetPackageName(), productID, basePlanID, offerID, &offer,
-	).RegionsVersionVersion("2022/02").Context(ctx).Do()
+	).UpdateMask(mask).RegionsVersionVersion("2022/02").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("failed to update offer: %w", err)
 	}
@@ -328,6 +378,10 @@ func runActivate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := cli.CheckConfirm(cmd); err != nil {
+		return err
+	}
+
 	if cli.IsDryRun() {
 		output.PrintInfo("Dry run: would activate offer '%s'", offerID)
 		return nil
@@ -355,6 +409,10 @@ func runActivate(cmd *cobra.Command, args []string) error {
 
 func runDeactivate(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
+		return err
+	}
+
+	if err := cli.CheckConfirm(cmd); err != nil {
 		return err
 	}
 

@@ -74,6 +74,7 @@ func init() {
 
 	addTargetingCmd.Flags().Int64Var(&recoveryID, "recovery-id", 0, "recovery action ID")
 	addTargetingCmd.Flags().StringVar(&filePath, "file", "", "JSON file with targeting definition")
+	addTargetingCmd.Flags().Bool("confirm", false, "confirm expanding the targeted population")
 	cli.MustMarkFlagRequired(addTargetingCmd, "recovery-id")
 	cli.MustMarkFlagRequired(addTargetingCmd, "file")
 
@@ -111,7 +112,7 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(resp.RecoveryActions) == 0 {
 		output.PrintInfo("No recovery actions found")
-		return nil
+		return output.Print([]RecoveryInfo{})
 	}
 
 	result := make([]RecoveryInfo, 0, len(resp.RecoveryActions))
@@ -232,6 +233,10 @@ func runCancel(cmd *cobra.Command, args []string) error {
 
 func runAddTargeting(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
+		return err
+	}
+
+	if err := cli.CheckConfirm(cmd); err != nil {
 		return err
 	}
 

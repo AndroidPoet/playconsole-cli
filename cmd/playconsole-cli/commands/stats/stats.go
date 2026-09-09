@@ -67,6 +67,23 @@ type DownloadSource struct {
 func runDownloads(cmd *cobra.Command, args []string) error {
 	client := api.NewGitHubClient()
 
+	if byPlatform && byRelease {
+		platforms, total, err := client.GetDownloadsByPlatform()
+		if err != nil {
+			return fmt.Errorf("failed to fetch platform stats: %w", err)
+		}
+		releases, err := client.GetDownloadsByRelease()
+		if err != nil {
+			return fmt.Errorf("failed to fetch release stats: %w", err)
+		}
+		return output.Print(DownloadStats{
+			Total:       total,
+			ByRelease:   releases,
+			ByPlatform:  platforms,
+			LastUpdated: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+
 	if byPlatform {
 		platforms, _, err := client.GetDownloadsByPlatform()
 		if err != nil {

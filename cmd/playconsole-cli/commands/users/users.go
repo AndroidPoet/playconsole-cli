@@ -1,12 +1,16 @@
 package users
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/api/androidpublisher/v3"
+	"google.golang.org/api/googleapi"
 
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
 	"github.com/AndroidPoet/playconsole-cli/internal/cli"
@@ -28,10 +32,21 @@ var listCmd = &cobra.Command{
 	RunE:  runList,
 }
 
+var inviteCmd = &cobra.Command{
+	Use:   "invite",
+	Short: "Invite a user to the developer account",
+	Long: `Invite a user to the developer account so that app-level access can
+be granted with 'users grant'. The user receives an invitation email and
+must accept it before access is active.`,
+	RunE: runInvite,
+}
+
 var grantCmd = &cobra.Command{
 	Use:   "grant",
 	Short: "Grant app access to a user",
-	RunE:  runGrant,
+	Long: `Grant app-level access to a user who is already part of the developer
+account. Use 'users invite' first for users not yet in the account.`,
+	RunE: runGrant,
 }
 
 var revokeCmd = &cobra.Command{
@@ -73,6 +88,9 @@ func init() {
 	UsersCmd.PersistentFlags().StringVar(&developerID, "developer", "", "developer account ID")
 	cli.MustMarkPersistentFlagRequired(UsersCmd, "developer")
 
+	inviteCmd.Flags().StringVar(&email, "email", "", "user email")
+	cli.MustMarkFlagRequired(inviteCmd, "email")
+
 	grantCmd.Flags().StringVar(&email, "email", "", "user email")
 	grantCmd.Flags().StringVar(&role, "role", "releaseManager", "role: admin, releaseManager, appOwner")
 	cli.MustMarkFlagRequired(grantCmd, "email")
@@ -82,6 +100,7 @@ func init() {
 	cli.MustMarkFlagRequired(revokeCmd, "email")
 
 	UsersCmd.AddCommand(listCmd)
+	UsersCmd.AddCommand(inviteCmd)
 	UsersCmd.AddCommand(grantCmd)
 	UsersCmd.AddCommand(revokeCmd)
 }
@@ -122,10 +141,33 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(result) == 0 {
 		output.PrintInfo("No users found")
-		return nil
 	}
 
 	return output.Print(result)
+}
+
+func runInvite(cmd *cobra.Command, args []string) error {
+	if cli.IsDryRun() {
+		output.PrintInfo("Dry run: would invite %s to developer %s", email, developerID)
+		return nil
+	}
+
+	client, err := api.NewClient("", 60*time.Second)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := client.Context()
+	defer cancel()
+
+	user := &androidpublisher.User{Email: email}
+	created, err := client.Users().Create(developerParent(), user).Context(ctx).Do()
+	if err != nil {
+		return err
+	}
+
+	output.PrintSuccess("Invited %s to developer %s", email, developerID)
+	return output.Print(userInfoFromAPI(created))
 }
 
 func runGrant(cmd *cobra.Command, args []string) error {
@@ -162,6 +204,10 @@ func runGrant(cmd *cobra.Command, args []string) error {
 	parent := fmt.Sprintf("%s/users/%s", developerParent(), email)
 	created, err := client.Grants().Create(parent, grant).Context(ctx).Do()
 	if err != nil {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && gerr.Code == http.StatusNotFound {
+			return fmt.Errorf("user %s is not part of developer account %s (run 'users invite --email %s' first): %w", email, developerID, email, err)
+		}
 		return err
 	}
 
@@ -221,6 +267,7 @@ func permissionsForRole(name string) ([]string, error) {
 		for roleName := range rolePermissions {
 			roles = append(roles, roleName)
 		}
+		sort.Strings(roles)
 		return nil, fmt.Errorf("invalid role %q. Valid roles: %s", name, strings.Join(roles, ", "))
 	}
 

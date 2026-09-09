@@ -2,6 +2,7 @@ package vitals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -93,11 +94,17 @@ var (
 	days int
 )
 
+const reportingTimeZone = "America/Los_Angeles"
+
+// errNoData is returned when a metric set query succeeds but carries no rows
+// or values for the requested window.
+var errNoData = errors.New("no vitals data returned")
+
 func init() {
 	daysCommands := []*cobra.Command{
 		crashesCmd, anrCmd, overviewCmd,
 		slowStartCmd, slowRenderingCmd, wakeupsCmd,
-		wakelocksCmd, memoryCmd, errorsCmd,
+		wakelocksCmd, memoryCmd, errorsCmd, errorsIssuesCmd,
 	}
 	for _, cmd := range daysCommands {
 		cmd.Flags().IntVar(&days, "days", 28, "number of days to query (7, 28, or custom)")
@@ -240,15 +247,15 @@ func runOverview(cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	crashMetrics, err := queryCrashMetrics(client, ctx)
+	crashMetrics, err := optionalMetrics("crash rate", client, ctx, queryCrashMetrics)
 	if err != nil {
 		return err
 	}
-	anrMetrics, err := queryANRMetrics(client, ctx)
+	anrMetrics, err := optionalMetrics("ANR rate", client, ctx, queryANRMetrics)
 	if err != nil {
 		return err
 	}
-	slowStartMetrics, err := querySlowStartMetrics(client, ctx)
+	slowStartMetrics, err := optionalMetrics("slow start rate", client, ctx, querySlowStartMetrics)
 	if err != nil {
 		return err
 	}
@@ -396,15 +403,20 @@ func runErrorIssues(cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	resp, err := client.Vitals().Errors.Issues.Search(client.AppName()).Context(ctx).Do()
+	start, end, err := dateWindow()
 	if err != nil {
-		return fmt.Errorf("failed to list error issues: %w", err)
+		return err
 	}
 
-	if len(resp.ErrorIssues) == 0 {
-		output.PrintInfo("No error issues found")
-		return nil
-	}
+	call := client.Vitals().Errors.Issues.Search(client.AppName()).
+		IntervalStartTimeYear(int64(start.Year())).
+		IntervalStartTimeMonth(int64(start.Month())).
+		IntervalStartTimeDay(int64(start.Day())).
+		IntervalStartTimeTimeZoneId(reportingTimeZone).
+		IntervalEndTimeYear(int64(end.Year())).
+		IntervalEndTimeMonth(int64(end.Month())).
+		IntervalEndTimeDay(int64(end.Day())).
+		IntervalEndTimeTimeZoneId(reportingTimeZone)
 
 	type IssueInfo struct {
 		Name         string `json:"name"`
@@ -413,19 +425,29 @@ func runErrorIssues(cmd *cobra.Command, args []string) error {
 		FirstVersion string `json:"first_version,omitempty"`
 	}
 
-	result := make([]IssueInfo, 0, len(resp.ErrorIssues))
-	for _, issue := range resp.ErrorIssues {
-		info := IssueInfo{
-			Name: issue.Name,
-			Type: issue.Type,
+	result := make([]IssueInfo, 0)
+	err = call.Pages(ctx, func(resp *playdeveloperreporting.GooglePlayDeveloperReportingV1beta1SearchErrorIssuesResponse) error {
+		for _, issue := range resp.ErrorIssues {
+			info := IssueInfo{
+				Name: issue.Name,
+				Type: issue.Type,
+			}
+			if issue.Cause != "" {
+				info.Cause = issue.Cause
+			}
+			if issue.FirstAppVersion != nil {
+				info.FirstVersion = fmt.Sprintf("%d", issue.FirstAppVersion.VersionCode)
+			}
+			result = append(result, info)
 		}
-		if issue.Cause != "" {
-			info.Cause = issue.Cause
-		}
-		if issue.FirstAppVersion != nil {
-			info.FirstVersion = fmt.Sprintf("%d", issue.FirstAppVersion.VersionCode)
-		}
-		result = append(result, info)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list error issues: %w", err)
+	}
+
+	if len(result) == 0 {
+		output.PrintInfo("No error issues found for %s", periodLabel())
 	}
 
 	return output.Print(result)
@@ -446,9 +468,14 @@ func reportingContext(cmd *cobra.Command) (*api.ReportingClient, context.Context
 }
 
 func queryCrashMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryCrashRateMetricSetRequest{
 		Metrics:      []string{"crashRate", "crashRate7dUserWeighted", "crashRate28dUserWeighted", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Crashrate.Query(
@@ -463,9 +490,14 @@ func queryCrashMetrics(client *api.ReportingClient, ctx context.Context) (map[st
 }
 
 func queryANRMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryAnrRateMetricSetRequest{
 		Metrics:      []string{"anrRate", "anrRate7dUserWeighted", "anrRate28dUserWeighted", "userPerceivedAnrRate", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Anrrate.Query(
@@ -480,9 +512,14 @@ func queryANRMetrics(client *api.ReportingClient, ctx context.Context) (map[stri
 }
 
 func querySlowStartMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QuerySlowStartRateMetricSetRequest{
 		Metrics:      []string{"slowStartRate", "slowStartRate7dUserWeighted", "slowStartRate28dUserWeighted", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Slowstartrate.Query(
@@ -497,6 +534,11 @@ func querySlowStartMetrics(client *api.ReportingClient, ctx context.Context) (ma
 }
 
 func querySlowRenderingMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QuerySlowRenderingRateMetricSetRequest{
 		Metrics: []string{
 			"slowRenderingRate20Fps",
@@ -507,7 +549,7 @@ func querySlowRenderingMetrics(client *api.ReportingClient, ctx context.Context)
 			"slowRenderingRate30Fps28dUserWeighted",
 			"distinctUsers",
 		},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Slowrenderingrate.Query(
@@ -522,9 +564,14 @@ func querySlowRenderingMetrics(client *api.ReportingClient, ctx context.Context)
 }
 
 func queryWakeupMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryExcessiveWakeupRateMetricSetRequest{
 		Metrics:      []string{"excessiveWakeupRate", "excessiveWakeupRate7dUserWeighted", "excessiveWakeupRate28dUserWeighted", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Excessivewakeuprate.Query(
@@ -539,9 +586,14 @@ func queryWakeupMetrics(client *api.ReportingClient, ctx context.Context) (map[s
 }
 
 func queryWakelockMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryStuckBackgroundWakelockRateMetricSetRequest{
 		Metrics:      []string{"stuckBgWakelockRate", "stuckBgWakelockRate7dUserWeighted", "stuckBgWakelockRate28dUserWeighted", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Stuckbackgroundwakelockrate.Query(
@@ -556,9 +608,14 @@ func queryWakelockMetrics(client *api.ReportingClient, ctx context.Context) (map
 }
 
 func queryMemoryMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryLmkRateMetricSetRequest{
 		Metrics:      []string{"userPerceivedLmkRate", "userPerceivedLmkRate7dUserWeighted", "userPerceivedLmkRate28dUserWeighted", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Lmkrate.Query(
@@ -573,9 +630,14 @@ func queryMemoryMetrics(client *api.ReportingClient, ctx context.Context) (map[s
 }
 
 func queryErrorMetrics(client *api.ReportingClient, ctx context.Context) (map[string]float64, error) {
+	spec, err := timelineSpec()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1QueryErrorCountMetricSetRequest{
 		Metrics:      []string{"errorReportCount", "distinctUsers"},
-		TimelineSpec: timelineSpec(),
+		TimelineSpec: spec,
 	}
 
 	resp, err := client.Vitals().Errors.Counts.Query(
@@ -589,24 +651,35 @@ func queryErrorMetrics(client *api.ReportingClient, ctx context.Context) (map[st
 	return firstRowMetrics(resp.Rows)
 }
 
-func timelineSpec() *playdeveloperreporting.GooglePlayDeveloperReportingV1beta1TimelineSpec {
+// dateWindow returns the [start, end) day window for the configured --days,
+// aligned to midnight in the reporting time zone.
+func dateWindow() (time.Time, time.Time, error) {
 	if days < 1 {
 		days = 1
 	}
 
-	location, err := time.LoadLocation("America/Los_Angeles")
+	loc, err := time.LoadLocation(reportingTimeZone)
 	if err != nil {
-		location = time.FixedZone("America/Los_Angeles", -8*60*60)
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to load time zone %s: %w", reportingTimeZone, err)
 	}
 
-	end := time.Now().In(location).Truncate(24 * time.Hour).Add(24 * time.Hour)
+	now := time.Now().In(loc)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	start := end.AddDate(0, 0, -days)
+	return start, end, nil
+}
+
+func timelineSpec() (*playdeveloperreporting.GooglePlayDeveloperReportingV1beta1TimelineSpec, error) {
+	start, end, err := dateWindow()
+	if err != nil {
+		return nil, err
+	}
 
 	return &playdeveloperreporting.GooglePlayDeveloperReportingV1beta1TimelineSpec{
 		AggregationPeriod: "FULL_RANGE",
 		StartTime:         dateTime(start),
 		EndTime:           dateTime(end),
-	}
+	}, nil
 }
 
 func dateTime(t time.Time) *playdeveloperreporting.GoogleTypeDateTime {
@@ -615,14 +688,31 @@ func dateTime(t time.Time) *playdeveloperreporting.GoogleTypeDateTime {
 		Month: int64(t.Month()),
 		Day:   int64(t.Day()),
 		TimeZone: &playdeveloperreporting.GoogleTypeTimeZone{
-			Id: "America/Los_Angeles",
+			Id: reportingTimeZone,
 		},
 	}
 }
 
+// optionalMetrics runs a metric query and turns a no-data result into an
+// empty metric map so that a combined view can still be rendered; other
+// errors are passed through.
+func optionalMetrics(
+	label string,
+	client *api.ReportingClient,
+	ctx context.Context,
+	query func(*api.ReportingClient, context.Context) (map[string]float64, error),
+) (map[string]float64, error) {
+	metrics, err := query(client, ctx)
+	if errors.Is(err, errNoData) {
+		output.PrintWarning("No %s data for %s; reporting as zero", label, periodLabel())
+		return map[string]float64{}, nil
+	}
+	return metrics, err
+}
+
 func firstRowMetrics(rows []*playdeveloperreporting.GooglePlayDeveloperReportingV1beta1MetricsRow) (map[string]float64, error) {
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("no vitals data returned for %s", periodLabel())
+		return nil, fmt.Errorf("%w for %s", errNoData, periodLabel())
 	}
 
 	result := make(map[string]float64)
@@ -639,7 +729,7 @@ func firstRowMetrics(rows []*playdeveloperreporting.GooglePlayDeveloperReporting
 	}
 
 	if len(result) == 0 {
-		return nil, fmt.Errorf("no metric values returned for %s", periodLabel())
+		return nil, fmt.Errorf("%w: no metric values for %s", errNoData, periodLabel())
 	}
 
 	return result, nil

@@ -1,7 +1,9 @@
 package testing
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,24 +52,37 @@ var internalSharingUploadCmd = &cobra.Command{
 var testersCmd = &cobra.Command{
 	Use:   "testers",
 	Short: "Manage testers",
+	Long: `Manage the Google Groups assigned as testers on a track.
+
+The Play Developer API only accepts Google Group email addresses here;
+individual tester emails are not supported by the API and must be managed
+through the Play Console UI or by adding the user to a Google Group.`,
 }
 
 var testersListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List testers for a track",
+	Short: "List tester Google Groups for a track",
 	RunE:  runTestersList,
 }
 
 var testersAddCmd = &cobra.Command{
 	Use:   "add",
-	Short: "Add testers to a track",
-	RunE:  runTestersAdd,
+	Short: "Add tester Google Groups to a track",
+	Long: `Add Google Group email addresses as testers on a track.
+
+Individual tester emails are not supported by the API; pass Google Group
+addresses (for example testers@googlegroups.com).`,
+	RunE: runTestersAdd,
 }
 
 var testersRemoveCmd = &cobra.Command{
 	Use:   "remove",
-	Short: "Remove testers from a track",
-	RunE:  runTestersRemove,
+	Short: "Remove tester Google Groups from a track",
+	Long: `Remove Google Group email addresses from a track's testers.
+
+Individual tester emails are not supported by the API; pass the Google Group
+addresses currently assigned to the track.`,
+	RunE: runTestersRemove,
 }
 
 var testerGroupsCmd = &cobra.Command{
@@ -78,7 +93,11 @@ var testerGroupsCmd = &cobra.Command{
 var testerGroupsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List tester groups",
-	RunE:  runTesterGroupsList,
+	Long: `The Play Developer API has no endpoint for listing tester groups.
+
+Groups are Google Groups managed outside the API; use
+'gpc testing testers list --track <track>' to see the groups assigned to a track.`,
+	RunE: runTesterGroupsList,
 }
 
 var (
@@ -95,14 +114,16 @@ func init() {
 
 	// Testers add flags
 	testersAddCmd.Flags().StringVar(&trackName, "track", "", "track name")
-	testersAddCmd.Flags().StringVar(&emails, "emails", "", "comma-separated email addresses")
-	testersAddCmd.Flags().StringVar(&emailsFile, "emails-file", "", "file containing email addresses (one per line)")
+	testersAddCmd.Flags().StringVar(&emails, "emails", "", "comma-separated Google Group email addresses (individual tester emails are not supported by the API)")
+	testersAddCmd.Flags().StringVar(&emailsFile, "emails-file", "", "file containing Google Group email addresses, one per line (individual tester emails are not supported by the API)")
 	cli.MustMarkFlagRequired(testersAddCmd, "track")
 
 	// Testers remove flags
 	testersRemoveCmd.Flags().StringVar(&trackName, "track", "", "track name")
-	testersRemoveCmd.Flags().StringVar(&emails, "emails", "", "comma-separated email addresses")
+	testersRemoveCmd.Flags().StringVar(&emails, "emails", "", "comma-separated Google Group email addresses (individual tester emails are not supported by the API)")
+	testersRemoveCmd.Flags().Bool("confirm", false, "confirm removal")
 	cli.MustMarkFlagRequired(testersRemoveCmd, "track")
+	cli.MustMarkFlagRequired(testersRemoveCmd, "emails")
 
 	// Internal sharing upload flags
 	internalSharingUploadCmd.Flags().StringVar(&filePath, "file", "", "path to APK/AAB file")
@@ -139,9 +160,6 @@ func runInternalList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	// Get the internal track
 	track, err := edit.Tracks().Get(client.GetPackageName(), edit.ID(), "internal").Context(edit.Context()).Do()
@@ -166,7 +184,6 @@ func runInternalList(cmd *cobra.Command, args []string) error {
 
 	if len(result) == 0 {
 		output.PrintInfo("No internal test releases found")
-		return nil
 	}
 
 	return output.Print(result)
@@ -250,23 +267,21 @@ func runTestersList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	testers, err := edit.Testers().Get(client.GetPackageName(), edit.ID(), trackName).Context(edit.Context()).Do()
 	if err != nil {
 		return err
 	}
 
-	if len(testers.GoogleGroups) == 0 {
+	groups := testers.GoogleGroups
+	if len(groups) == 0 {
 		output.PrintInfo("No testers configured for track '%s'", trackName)
-		return nil
+		groups = []string{}
 	}
 
 	return output.Print(map[string]interface{}{
 		"track":         trackName,
-		"google_groups": testers.GoogleGroups,
+		"google_groups": groups,
 	})
 }
 
@@ -276,13 +291,7 @@ func runTestersAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Collect emails
-	var emailList []string
-	if emails != "" {
-		emailList = strings.Split(emails, ",")
-		for i, e := range emailList {
-			emailList[i] = strings.TrimSpace(e)
-		}
-	}
+	emailList := splitEmails(emails)
 
 	if emailsFile != "" {
 		data, err := os.ReadFile(emailsFile)
@@ -299,11 +308,11 @@ func runTestersAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(emailList) == 0 {
-		return fmt.Errorf("no emails provided. Use --emails or --emails-file")
+		return fmt.Errorf("no Google Group emails provided. Use --emails or --emails-file")
 	}
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would add %d testers to track '%s'", len(emailList), trackName)
+		output.PrintInfo("Dry run: would add %d tester groups to track '%s'", len(emailList), trackName)
 		return output.Print(emailList)
 	}
 
@@ -323,11 +332,16 @@ func runTestersAdd(cmd *cobra.Command, args []string) error {
 	// Get existing testers
 	existing, err := edit.Testers().Get(client.GetPackageName(), edit.ID(), trackName).Context(ctx).Do()
 	if err != nil {
-		// If no testers exist yet, start fresh
+		// Only a 404 means no testers exist yet; any other error must not
+		// lead to replacing the list with a partial one.
+		var gerr *googleapi.Error
+		if !errors.As(err, &gerr) || gerr.Code != http.StatusNotFound {
+			return fmt.Errorf("failed to get existing testers: %w", err)
+		}
 		existing = &androidpublisher.Testers{}
 	}
 
-	// Add new emails (avoiding duplicates)
+	// Add new emails (avoiding duplicates, including within the input)
 	existingMap := make(map[string]bool)
 	for _, g := range existing.GoogleGroups {
 		existingMap[g] = true
@@ -337,6 +351,7 @@ func runTestersAdd(cmd *cobra.Command, args []string) error {
 	for _, email := range emailList {
 		if !existingMap[email] {
 			existing.GoogleGroups = append(existing.GoogleGroups, email)
+			existingMap[email] = true
 			added++
 		}
 	}
@@ -351,7 +366,7 @@ func runTestersAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	output.PrintSuccess("Added %d testers to track '%s'", added, trackName)
+	output.PrintSuccess("Added %d tester groups to track '%s'", added, trackName)
 	return nil
 }
 
@@ -360,18 +375,19 @@ func runTestersRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	emailList := strings.Split(emails, ",")
-	for i, e := range emailList {
-		emailList[i] = strings.TrimSpace(e)
-	}
+	emailList := splitEmails(emails)
 
 	if len(emailList) == 0 {
-		return fmt.Errorf("no emails provided")
+		return fmt.Errorf("no Google Group emails provided. Use --emails")
+	}
+
+	if err := cli.CheckConfirm(cmd); err != nil {
+		return err
 	}
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would remove %d testers from track '%s'", len(emailList), trackName)
-		return nil
+		output.PrintInfo("Dry run: would remove %d tester groups from track '%s'", len(emailList), trackName)
+		return output.Print(emailList)
 	}
 
 	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)
@@ -408,6 +424,10 @@ func runTestersRemove(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if removed == 0 {
+		return fmt.Errorf("none of the given Google Groups are assigned to track '%s'", trackName)
+	}
+
 	existing.GoogleGroups = newGroups
 
 	_, err = edit.Testers().Update(client.GetPackageName(), edit.ID(), trackName, existing).Context(ctx).Do()
@@ -419,7 +439,7 @@ func runTestersRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	output.PrintSuccess("Removed %d testers from track '%s'", removed, trackName)
+	output.PrintSuccess("Removed %d tester groups from track '%s'", removed, trackName)
 	return nil
 }
 
@@ -428,9 +448,26 @@ func runTesterGroupsList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Note: Tester groups are managed via the Play Console UI
-	// The API provides access to Google Groups assigned to tracks
-	output.PrintInfo("Tester groups are managed via Google Groups.")
+	// Tester groups are Google Groups managed outside the API; the API only
+	// exposes the groups assigned to a track.
+	output.PrintInfo("The Play Developer API has no endpoint for listing tester groups.")
 	output.PrintInfo("Use 'gpc testing testers list --track <track>' to see assigned groups.")
-	return nil
+	return output.Print(map[string]interface{}{
+		"supported": false,
+		"message":   "The Play Developer API has no endpoint for listing tester groups; use 'testing testers list --track <track>' to see the Google Groups assigned to a track",
+		"groups":    []string{},
+	})
+}
+
+// splitEmails splits a comma-separated list, trimming whitespace and
+// dropping empty entries (for example from a trailing comma).
+func splitEmails(s string) []string {
+	var result []string
+	for _, e := range strings.Split(s, ",") {
+		e = strings.TrimSpace(e)
+		if e != "" {
+			result = append(result, e)
+		}
+	}
+	return result
 }

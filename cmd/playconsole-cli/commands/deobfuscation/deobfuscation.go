@@ -3,6 +3,7 @@ package deobfuscation
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,6 +77,14 @@ func runUpload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("file not found: %w", err)
 	}
 
+	isZip := strings.EqualFold(filepath.Ext(filePath), ".zip")
+	if apiType == "nativeCode" && !isZip {
+		return fmt.Errorf("native-code symbols must be a .zip file, got '%s'", filepath.Base(filePath))
+	}
+	if apiType == "proguard" && isZip {
+		return fmt.Errorf("proguard mapping must be a plain text file, not a .zip (use --type native-code for symbols)")
+	}
+
 	if cli.IsDryRun() {
 		output.PrintInfo("Dry run: would upload %s (%d bytes) as %s for version %d",
 			filePath, info.Size(), apiType, versionCode)
@@ -117,9 +126,14 @@ func runUpload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	symbolType := apiType
+	if resp.DeobfuscationFile != nil && resp.DeobfuscationFile.SymbolType != "" {
+		symbolType = resp.DeobfuscationFile.SymbolType
+	}
+
 	result := UploadResult{
 		VersionCode: versionCode,
-		FileType:    resp.DeobfuscationFile.SymbolType,
+		FileType:    symbolType,
 		Status:      "uploaded",
 	}
 

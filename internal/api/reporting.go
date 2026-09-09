@@ -73,6 +73,11 @@ func (c *ReportingClient) AppName() string {
 	return fmt.Sprintf("apps/%s", c.packageName)
 }
 
+// Apps returns the apps service (accessible-app search)
+func (c *ReportingClient) Apps() *playdeveloperreporting.AppsService {
+	return c.service.Apps
+}
+
 // Vitals returns the vitals service
 func (c *ReportingClient) Vitals() *playdeveloperreporting.VitalsService {
 	return c.service.Vitals

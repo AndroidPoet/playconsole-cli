@@ -1,10 +1,10 @@
 package purchases
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/api/androidpublisher/v3"
 
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
 	"github.com/AndroidPoet/playconsole-cli/internal/cli"
@@ -50,11 +50,12 @@ var voidedListCmd = &cobra.Command{
 }
 
 var (
-	purchaseToken string
-	productID     string
-	startTime     string
-	endTime       string
-	maxResults    int64
+	purchaseToken        string
+	productID            string
+	startTime            string
+	endTime              string
+	maxResults           int64
+	includeSubscriptions bool
 )
 
 func init() {
@@ -62,12 +63,12 @@ func init() {
 	verifyCmd.Flags().StringVar(&purchaseToken, "token", "", "purchase token")
 	verifyCmd.Flags().StringVar(&productID, "product-id", "", "product ID (for products)")
 	cli.MustMarkFlagRequired(verifyCmd, "token")
+	cli.MustMarkFlagRequired(verifyCmd, "product-id")
 
 	// Subscription status flags
 	subscriptionStatusCmd.Flags().StringVar(&purchaseToken, "token", "", "subscription token")
-	subscriptionStatusCmd.Flags().StringVar(&productID, "product-id", "", "subscription product ID")
+	subscriptionStatusCmd.Flags().StringVar(&productID, "product-id", "", "subscription product ID (optional; not needed for lookup)")
 	cli.MustMarkFlagRequired(subscriptionStatusCmd, "token")
-	cli.MustMarkFlagRequired(subscriptionStatusCmd, "product-id")
 
 	// Acknowledge flags
 	acknowledgeCmd.Flags().StringVar(&purchaseToken, "token", "", "purchase token")
@@ -78,7 +79,8 @@ func init() {
 	// Voided list flags
 	voidedListCmd.Flags().StringVar(&startTime, "start-time", "", "start time (RFC3339)")
 	voidedListCmd.Flags().StringVar(&endTime, "end-time", "", "end time (RFC3339)")
-	voidedListCmd.Flags().Int64Var(&maxResults, "max-results", 100, "maximum results")
+	voidedListCmd.Flags().Int64Var(&maxResults, "max-results", 100, "maximum results per page")
+	voidedListCmd.Flags().BoolVar(&includeSubscriptions, "include-subscriptions", false, "include voided subscription purchases as well as in-app products")
 
 	voidedCmd.AddCommand(voidedListCmd)
 
@@ -91,10 +93,6 @@ func init() {
 func runVerify(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
 		return err
-	}
-
-	if productID == "" {
-		return fmt.Errorf("--product-id is required to verify purchases")
 	}
 
 	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)
@@ -156,7 +154,7 @@ func runSubscriptionStatus(cmd *cobra.Command, args []string) error {
 			items = append(items, map[string]interface{}{
 				"product_id":    item.ProductId,
 				"expiry_time":   item.ExpiryTime,
-				"auto_renewing": item.AutoRenewingPlan != nil,
+				"auto_renewing": item.AutoRenewingPlan != nil && item.AutoRenewingPlan.AutoRenewEnabled,
 			})
 		}
 		result["line_items"] = items
@@ -183,7 +181,7 @@ func runAcknowledge(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	err = client.Purchases().Products.Acknowledge(client.GetPackageName(), productID, purchaseToken, nil).Context(ctx).Do()
+	err = client.Purchases().Products.Acknowledge(client.GetPackageName(), productID, purchaseToken, &androidpublisher.ProductPurchasesAcknowledgeRequest{}).Context(ctx).Do()
 	if err != nil {
 		return err
 	}
@@ -227,14 +225,8 @@ func runVoidedList(cmd *cobra.Command, args []string) error {
 		call = call.MaxResults(maxResults)
 	}
 
-	voided, err := call.Do()
-	if err != nil {
-		return err
-	}
-
-	if len(voided.VoidedPurchases) == 0 {
-		output.PrintInfo("No voided purchases found")
-		return nil
+	if includeSubscriptions {
+		call = call.Type(1)
 	}
 
 	type VoidedInfo struct {
@@ -244,14 +236,35 @@ func runVoidedList(cmd *cobra.Command, args []string) error {
 		VoidedReason int64  `json:"voided_reason"`
 	}
 
-	result := make([]VoidedInfo, 0, len(voided.VoidedPurchases))
-	for _, v := range voided.VoidedPurchases {
-		result = append(result, VoidedInfo{
-			OrderID:      v.OrderId,
-			VoidedTime:   time.UnixMilli(v.VoidedTimeMillis).Format(time.RFC3339),
-			VoidedSource: v.VoidedSource,
-			VoidedReason: v.VoidedReason,
-		})
+	result := make([]VoidedInfo, 0)
+	pageToken := ""
+	for {
+		if pageToken != "" {
+			call = call.Token(pageToken)
+		}
+
+		voided, err := call.Do()
+		if err != nil {
+			return err
+		}
+
+		for _, v := range voided.VoidedPurchases {
+			result = append(result, VoidedInfo{
+				OrderID:      v.OrderId,
+				VoidedTime:   time.UnixMilli(v.VoidedTimeMillis).Format(time.RFC3339),
+				VoidedSource: v.VoidedSource,
+				VoidedReason: v.VoidedReason,
+			})
+		}
+
+		if voided.TokenPagination == nil || voided.TokenPagination.NextPageToken == "" {
+			break
+		}
+		pageToken = voided.TokenPagination.NextPageToken
+	}
+
+	if len(result) == 0 {
+		output.PrintInfo("No voided purchases found")
 	}
 
 	return output.Print(result)

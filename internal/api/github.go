@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	githubAPIURL = "https://api.github.com/repos/AndroidPoet/playconsole-cli/releases"
+	githubAPIURL = "https://api.github.com/repos/AndroidPoet/playconsole-cli/releases?per_page=100"
 )
 
 // GitHubClient handles GitHub API requests
@@ -40,11 +41,29 @@ func NewGitHubClient() *GitHubClient {
 	}
 }
 
-// GetReleases fetches all releases from GitHub
+// GetReleases fetches all releases from GitHub, following pagination
 func (c *GitHubClient) GetReleases() ([]GitHubRelease, error) {
-	req, err := http.NewRequest("GET", githubAPIURL, nil)
+	var releases []GitHubRelease
+
+	url := githubAPIURL
+	for url != "" {
+		page, next, err := c.fetchReleasePage(url)
+		if err != nil {
+			return nil, err
+		}
+		releases = append(releases, page...)
+		url = next
+	}
+
+	return releases, nil
+}
+
+// fetchReleasePage fetches one page of releases and returns the URL of the
+// next page, or "" when there are no more pages.
+func (c *GitHubClient) fetchReleasePage(url string) ([]GitHubRelease, string, error) {
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -52,22 +71,39 @@ func (c *GitHubClient) GetReleases() ([]GitHubRelease, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch releases: %w", err)
+		return nil, "", fmt.Errorf("failed to fetch releases: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
 	var releases []GitHubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return releases, nil
+	return releases, nextPageURL(resp.Header.Get("Link")), nil
+}
+
+// nextPageURL extracts the rel="next" URL from a GitHub Link header
+func nextPageURL(link string) string {
+	for _, part := range strings.Split(link, ",") {
+		segments := strings.Split(strings.TrimSpace(part), ";")
+		if len(segments) < 2 {
+			continue
+		}
+		url := strings.Trim(strings.TrimSpace(segments[0]), "<>")
+		for _, param := range segments[1:] {
+			if strings.TrimSpace(param) == `rel="next"` {
+				return url
+			}
+		}
+	}
+	return ""
 }
 
 // GetTotalDownloads returns the total download count across all releases
@@ -147,6 +183,13 @@ func (c *GitHubClient) GetDownloadsByPlatform() ([]PlatformDownloads, int64, err
 			Percent:   fmt.Sprintf("%.1f%%", percent),
 		})
 	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Downloads != result[j].Downloads {
+			return result[i].Downloads > result[j].Downloads
+		}
+		return result[i].Platform < result[j].Platform
+	})
 
 	return result, total, nil
 }

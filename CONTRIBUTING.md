@@ -56,7 +56,8 @@ Open an issue describing:
 git clone https://github.com/AndroidPoet/playconsole-cli.git
 cd playconsole-cli
 make build
-./playconsole-cli version
+./bin/playconsole-cli version
+make test
 ```
 
 ## Code Style

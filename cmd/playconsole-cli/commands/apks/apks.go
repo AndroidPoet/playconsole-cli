@@ -44,7 +44,7 @@ var (
 
 func init() {
 	uploadCmd.Flags().StringVar(&filePath, "file", "", "path to APK file")
-	uploadCmd.Flags().StringVar(&trackName, "track", "", "track to assign")
+	uploadCmd.Flags().StringVar(&trackName, "track", "", "track to assign; defaults to the .gpc.yaml track")
 	uploadCmd.Flags().BoolVar(&autoCommit, "commit", true, "automatically commit the edit")
 	cli.MustMarkFlagRequired(uploadCmd, "file")
 
@@ -64,6 +64,9 @@ type APKInfo struct {
 func runUpload(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
 		return err
+	}
+	if trackName == "" {
+		trackName = cli.DefaultTrack()
 	}
 
 	// Validate file
@@ -149,6 +152,9 @@ func runUpload(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		output.PrintSuccess("Edit committed")
+	} else {
+		edit.Keep()
+		output.PrintInfo("Edit ID: %s (not committed, use 'gpc edits commit --edit-id %s' to commit)", edit.ID(), edit.ID())
 	}
 
 	result := APKInfo{
@@ -177,9 +183,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	apks, err := edit.APKs().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -200,7 +203,6 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(result) == 0 {
 		output.PrintInfo("No APKs found")
-		return nil
 	}
 
 	return output.Print(result)

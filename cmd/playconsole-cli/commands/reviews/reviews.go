@@ -95,70 +95,100 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if minRating != 0 && (minRating < 1 || minRating > 5) {
+		return fmt.Errorf("--min-rating must be between 1 and 5")
+	}
+	if maxRating != 0 && (maxRating < 1 || maxRating > 5) {
+		return fmt.Errorf("--max-rating must be between 1 and 5")
+	}
+	if minRating != 0 && maxRating != 0 && minRating > maxRating {
+		return fmt.Errorf("--min-rating (%d) cannot exceed --max-rating (%d)", minRating, maxRating)
+	}
+
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	call := client.Reviews().List(client.GetPackageName()).Context(ctx)
-
-	if maxResults > 0 {
-		call = call.MaxResults(maxResults)
-	}
-	if startIndex > 0 {
-		call = call.StartIndex(startIndex)
-	}
-	if translationLang != "" {
-		call = call.TranslationLanguage(translationLang)
-	}
-
-	reviews, err := call.Do()
-	if err != nil {
-		return err
-	}
-
+	// Rating is filtered client-side, so keep fetching pages until enough
+	// reviews match or the API runs out. Page fetches are capped so a very
+	// selective filter cannot walk the entire review history.
+	const maxPages = 20
 	result := make([]ReviewInfo, 0)
-	for _, r := range reviews.Reviews {
-		// Get the user's comment (first comment in the thread)
-		if len(r.Comments) == 0 {
-			continue
+	nextToken := ""
+
+	for page := 0; page < maxPages; page++ {
+		call := client.Reviews().List(client.GetPackageName()).Context(ctx)
+
+		if maxResults > 0 {
+			call = call.MaxResults(maxResults)
+		}
+		if translationLang != "" {
+			call = call.TranslationLanguage(translationLang)
+		}
+		if nextToken != "" {
+			call = call.Token(nextToken)
+		} else if startIndex > 0 {
+			call = call.StartIndex(startIndex)
 		}
 
-		userComment := r.Comments[0].UserComment
-		if userComment == nil {
-			continue
+		reviews, err := call.Do()
+		if err != nil {
+			return err
 		}
 
-		// Filter by rating if specified
-		if minRating > 0 && int(userComment.StarRating) < minRating {
-			continue
-		}
-		if maxRating > 0 && int(userComment.StarRating) > maxRating {
-			continue
+		for _, r := range reviews.Reviews {
+			// Get the user's comment (first comment in the thread)
+			if len(r.Comments) == 0 {
+				continue
+			}
+
+			userComment := r.Comments[0].UserComment
+			if userComment == nil {
+				continue
+			}
+
+			// Filter by rating if specified
+			if minRating > 0 && int(userComment.StarRating) < minRating {
+				continue
+			}
+			if maxRating > 0 && int(userComment.StarRating) > maxRating {
+				continue
+			}
+
+			info := ReviewInfo{
+				ReviewID:   r.ReviewId,
+				AuthorName: r.AuthorName,
+				Rating:     int64(userComment.StarRating),
+				Text:       userComment.Text,
+				HasReply:   len(r.Comments) > 1 && r.Comments[1].DeveloperComment != nil,
+			}
+
+			if userComment.LastModified != nil {
+				info.LastModified = time.Unix(userComment.LastModified.Seconds, 0).Format(time.RFC3339)
+			}
+			if userComment.AppVersionCode > 0 {
+				info.AppVersion = fmt.Sprintf("%d", userComment.AppVersionCode)
+			}
+			if userComment.Device != "" {
+				info.DeviceType = userComment.Device
+			}
+
+			result = append(result, info)
+			if maxResults > 0 && int64(len(result)) >= maxResults {
+				break
+			}
 		}
 
-		info := ReviewInfo{
-			ReviewID:   r.ReviewId,
-			AuthorName: r.AuthorName,
-			Rating:     int64(userComment.StarRating),
-			Text:       userComment.Text,
-			HasReply:   len(r.Comments) > 1 && r.Comments[1].DeveloperComment != nil,
+		if maxResults > 0 && int64(len(result)) >= maxResults {
+			break
 		}
-
-		if userComment.LastModified != nil {
-			info.LastModified = time.Unix(userComment.LastModified.Seconds, 0).Format(time.RFC3339)
+		if reviews.TokenPagination == nil || reviews.TokenPagination.NextPageToken == "" {
+			break
 		}
-		if userComment.AppVersionCode > 0 {
-			info.AppVersion = fmt.Sprintf("%d", userComment.AppVersionCode)
-		}
-		if userComment.Device != "" {
-			info.DeviceType = userComment.Device
-		}
-
-		result = append(result, info)
+		nextToken = reviews.TokenPagination.NextPageToken
 	}
 
 	if len(result) == 0 {
 		output.PrintInfo("No reviews found")
-		return nil
 	}
 
 	return output.Print(result)

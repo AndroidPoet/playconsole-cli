@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -60,14 +62,16 @@ var (
 	filePath    string
 	title       string
 	description string
+	updateMask  string
 	pageSize    int64
-	pageToken   string
 )
+
+// fullUpdateMask covers every writable top-level field of a one-time product.
+const fullUpdateMask = "listings,purchaseOptions,offerTags,taxAndComplianceSettings,restrictedPaymentCountries"
 
 func init() {
 	// List flags
 	listCmd.Flags().Int64Var(&pageSize, "page-size", 100, "maximum results per page")
-	listCmd.Flags().StringVar(&pageToken, "page-token", "", "page token for pagination")
 
 	// Get flags
 	getCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
@@ -75,9 +79,10 @@ func init() {
 
 	// Create flags
 	createCmd.Flags().StringVar(&productID, "product-id", "", "product ID")
-	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with product definition")
-	createCmd.Flags().StringVar(&title, "title", "", "product title")
-	createCmd.Flags().StringVar(&description, "description", "", "product description")
+	createCmd.Flags().StringVar(&filePath, "file", "", "JSON file with product definition (required; must include purchaseOptions)")
+	createCmd.Flags().StringVar(&title, "title", "", "override the listing title from the file")
+	createCmd.Flags().StringVar(&description, "description", "", "override the listing description from the file")
+	createCmd.Flags().StringVar(&updateMask, "update-mask", "", "comma-separated field mask (default: derived from the file's top-level keys)")
 	cli.MustMarkFlagRequired(createCmd, "product-id")
 
 	// Update flags
@@ -85,6 +90,7 @@ func init() {
 	updateCmd.Flags().StringVar(&filePath, "file", "", "JSON file with product definition")
 	updateCmd.Flags().StringVar(&title, "title", "", "product title")
 	updateCmd.Flags().StringVar(&description, "description", "", "product description")
+	updateCmd.Flags().StringVar(&updateMask, "update-mask", "", "comma-separated field mask (default: derived from the file's top-level keys)")
 	cli.MustMarkFlagRequired(updateCmd, "product-id")
 
 	// Delete flags
@@ -119,40 +125,114 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	call := client.Monetization().Onetimeproducts.List(client.GetPackageName()).Context(ctx)
+	call := client.Monetization().Onetimeproducts.List(client.GetPackageName())
 	if pageSize > 0 {
 		call = call.PageSize(pageSize)
 	}
-	if pageToken != "" {
-		call = call.PageToken(pageToken)
-	}
 
-	products, err := call.Do()
+	result := make([]ProductInfo, 0)
+	err = call.Pages(ctx, func(page *androidpublisher.ListOneTimeProductsResponse) error {
+		for _, p := range page.OneTimeProducts {
+			info := ProductInfo{
+				ProductID: p.ProductId,
+			}
+
+			if l := preferredListing(p.Listings); l != nil {
+				info.Title = l.Title
+				info.Description = l.Description
+			}
+
+			result = append(result, info)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 
-	result := make([]ProductInfo, 0, len(products.OneTimeProducts))
-	for _, p := range products.OneTimeProducts {
-		info := ProductInfo{
-			ProductID: p.ProductId,
-		}
-
-		// Get title and description from listings
-		if len(p.Listings) > 0 {
-			info.Title = p.Listings[0].Title
-			info.Description = p.Listings[0].Description
-		}
-
-		result = append(result, info)
-	}
-
 	if len(result) == 0 {
 		output.PrintInfo("No one-time products found")
-		return nil
 	}
 
 	return output.Print(result)
+}
+
+// preferredListing returns the en-US listing when present, otherwise the first one.
+func preferredListing(listings []*androidpublisher.OneTimeProductListing) *androidpublisher.OneTimeProductListing {
+	for _, l := range listings {
+		if l != nil && l.LanguageCode == "en-US" {
+			return l
+		}
+	}
+	if len(listings) > 0 {
+		return listings[0]
+	}
+	return nil
+}
+
+// readProductFile parses a product definition and derives an update mask from
+// the JSON's top-level keys (identifiers are excluded since they are not
+// writable through the mask).
+func readProductFile(path string) (*androidpublisher.OneTimeProduct, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	product := &androidpublisher.OneTimeProduct{}
+	if err := json.Unmarshal(data, product); err != nil {
+		return nil, "", fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, "", fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		if k == "packageName" || k == "productId" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	return product, strings.Join(keys, ","), nil
+}
+
+// applyListingOverrides sets title/description on the preferred listing,
+// creating an en-US listing when the product has none. It reports whether
+// anything was changed.
+func applyListingOverrides(product *androidpublisher.OneTimeProduct) bool {
+	if title == "" && description == "" {
+		return false
+	}
+	listing := preferredListing(product.Listings)
+	if listing == nil {
+		listing = &androidpublisher.OneTimeProductListing{LanguageCode: "en-US"}
+		product.Listings = append(product.Listings, listing)
+	}
+	if title != "" {
+		listing.Title = title
+	}
+	if description != "" {
+		listing.Description = description
+	}
+	return true
+}
+
+// withMaskField appends field to a comma-separated mask if it is not present.
+func withMaskField(mask, field string) string {
+	if mask == "" {
+		return field
+	}
+	for _, f := range strings.Split(mask, ",") {
+		if strings.TrimSpace(f) == field {
+			return mask
+		}
+	}
+	return mask + "," + field
 }
 
 func runGet(cmd *cobra.Command, args []string) error {
@@ -181,30 +261,23 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var product *androidpublisher.OneTimeProduct
+	if filePath == "" {
+		return fmt.Errorf("--file is required: the API needs purchaseOptions, which cannot be expressed with flags alone")
+	}
 
-	if filePath != "" {
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
-		}
-		product = &androidpublisher.OneTimeProduct{}
-		if err := json.Unmarshal(data, product); err != nil {
-			return fmt.Errorf("failed to parse JSON: %w", err)
-		}
-	} else {
-		// Create minimal product from flags
-		product = &androidpublisher.OneTimeProduct{
-			PackageName: cli.GetPackageName(),
-			ProductId:   productID,
-			Listings: []*androidpublisher.OneTimeProductListing{
-				{
-					LanguageCode: "en-US",
-					Title:        title,
-					Description:  description,
-				},
-			},
-		}
+	product, mask, err := readProductFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	if applyListingOverrides(product) {
+		mask = withMaskField(mask, "listings")
+	}
+	if updateMask != "" {
+		mask = updateMask
+	}
+	if mask == "" {
+		mask = fullUpdateMask
 	}
 
 	// Ensure package name and product ID are set
@@ -212,7 +285,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	product.ProductId = productID
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would create product")
+		output.PrintInfo("Dry run: would create product (update mask: %s)", mask)
 		return output.Print(product)
 	}
 
@@ -227,6 +300,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	// Use Patch with allowMissing=true to create
 	result, err := client.Monetization().Onetimeproducts.Patch(client.GetPackageName(), productID, product).
 		AllowMissing(true).
+		UpdateMask(mask).
 		RegionsVersionVersion("2022/02").
 		Context(ctx).
 		Do()
@@ -251,44 +325,47 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	var product *androidpublisher.OneTimeProduct
+	var mask string
 
 	if filePath != "" {
-		data, err := os.ReadFile(filePath)
+		product, mask, err = readProductFile(filePath)
 		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
+			return err
 		}
-		product = &androidpublisher.OneTimeProduct{}
-		if err := json.Unmarshal(data, product); err != nil {
-			return fmt.Errorf("failed to parse JSON: %w", err)
+		if applyListingOverrides(product) {
+			mask = withMaskField(mask, "listings")
 		}
+		product.PackageName = cli.GetPackageName()
+		product.ProductId = productID
 	} else {
+		if title == "" && description == "" {
+			return fmt.Errorf("nothing to update: provide --file, --title, or --description")
+		}
+
 		// Get existing product first
 		existing, err := client.Monetization().Onetimeproducts.Get(client.GetPackageName(), productID).Context(ctx).Do()
 		if err != nil {
 			return err
 		}
 		product = existing
+		applyListingOverrides(product)
+		mask = "listings"
+	}
 
-		// Update fields if provided
-		if title != "" || description != "" {
-			if len(product.Listings) == 0 {
-				product.Listings = []*androidpublisher.OneTimeProductListing{{LanguageCode: "en-US"}}
-			}
-			if title != "" {
-				product.Listings[0].Title = title
-			}
-			if description != "" {
-				product.Listings[0].Description = description
-			}
-		}
+	if updateMask != "" {
+		mask = updateMask
+	}
+	if mask == "" {
+		return fmt.Errorf("update mask is empty: the file has no updatable top-level fields; use --update-mask")
 	}
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would update product")
+		output.PrintInfo("Dry run: would update product (update mask: %s)", mask)
 		return output.Print(product)
 	}
 
 	result, err := client.Monetization().Onetimeproducts.Patch(client.GetPackageName(), productID, product).
+		UpdateMask(mask).
 		RegionsVersionVersion("2022/02").
 		Context(ctx).
 		Do()
@@ -327,6 +404,9 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	output.PrintInfo("Product '%s' deleted", productID)
-	return nil
+	output.PrintSuccess("Product '%s' deleted", productID)
+	return output.Print(map[string]interface{}{
+		"product_id": productID,
+		"deleted":    true,
+	})
 }

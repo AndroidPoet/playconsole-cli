@@ -9,7 +9,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/AndroidPoet/playconsole-cli?style=for-the-badge&color=3DDC84&logo=android)](https://github.com/AndroidPoet/playconsole-cli/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/AndroidPoet/playconsole-cli/total?style=for-the-badge&color=blue)](https://github.com/AndroidPoet/playconsole-cli/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/AndroidPoet/playconsole-cli/ci.yml?style=for-the-badge&label=CI)](https://github.com/AndroidPoet/playconsole-cli/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
 **No browser. No clicking. Just ship.**
@@ -115,7 +115,7 @@ gpc bundles find --version-code 42                     # Find by version code
 gpc bundles wait --version-code 42                     # Wait for processing
 gpc tracks list                                        # List tracks
 gpc tracks promote --from internal --to beta           # Promote
-gpc tracks update --track production --rollout 50     # Staged rollout
+gpc tracks update --track production --version-code 42 --rollout 50  # Staged rollout
 gpc tracks halt --track production                    # Emergency halt
 gpc deobfuscation upload --version-code 42 --file mapping.txt  # Crash symbolication
 ```
@@ -125,7 +125,7 @@ gpc deobfuscation upload --version-code 42 --file mapping.txt  # Crash symbolica
 ```bash
 gpc listings sync --dir ./metadata/                   # Sync all listings
 gpc listings update --locale en-US --title "My App"   # Update listing
-gpc images sync --dir ./screenshots/                  # Sync screenshots
+gpc images sync --dir ./screenshots/ --confirm        # Replace screenshots
 gpc availability list --track production              # Country targeting
 ```
 
@@ -182,13 +182,14 @@ gpc reports types                                      # Report type info
 
 ```bash
 gpc testing internal-sharing upload --file app.aab   # Instant test link
-gpc testing testers add --track beta --email "dev@company.com"
+gpc testing testers add --track beta --emails "testers@googlegroups.com"
 ```
 
 ### 👥 Team
 
 ```bash
 gpc users list
+gpc users invite --email "dev@company.com"
 gpc users grant --email "dev@company.com" --role releaseManager
 ```
 
@@ -197,7 +198,7 @@ gpc users grant --email "dev@company.com" --role releaseManager
 ```bash
 gpc doctor                                             # Validate setup
 gpc init --package com.example.app                     # Create project config
-gpc diff                                               # Compare draft vs live
+gpc diff --edit-id EDIT_ID                             # Compare an open edit vs live
 gpc recovery list                                      # App recovery actions
 gpc completion zsh > "${fpath[1]}/_gpc"                # Shell completions
 ```
@@ -277,6 +278,12 @@ Set up a staged rollout to production starting at 5%
 | `GPC_PACKAGE` | Default package name |
 | `GPC_PROFILE` | Auth profile to use |
 | `GPC_OUTPUT` | Format: `json` \| `table` \| `tsv` \| `csv` \| `yaml` \| `markdown` |
+| `GPC_TIMEOUT` | Per-request timeout override, e.g. `120s` |
+| `GPC_DEBUG` | `1`/`true` to log API requests and responses to stderr |
+
+Precedence is flag > environment variable > `.gpc.yaml` project config > profile default.
+Only the JSON/table payload goes to stdout; progress and warnings go to stderr, so
+`gpc tracks list | jq` always receives a clean document.
 
 ---
 

@@ -25,10 +25,10 @@ type Config struct {
 }
 
 var (
-	cfg          *Config
+	cfg            *Config
 	currentProfile *Profile
-	debugMode    bool
-	configPath   string
+	debugMode      bool
+	configPath     string
 )
 
 // Init initializes the configuration

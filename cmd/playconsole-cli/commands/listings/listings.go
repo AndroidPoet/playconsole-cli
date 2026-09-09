@@ -1,7 +1,9 @@
 package listings
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"google.golang.org/api/androidpublisher/v3"
+	"google.golang.org/api/googleapi"
 
 	"github.com/AndroidPoet/playconsole-cli/internal/api"
 	"github.com/AndroidPoet/playconsole-cli/internal/cli"
@@ -114,9 +117,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	listings, err := edit.Listings().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -134,10 +134,23 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(result) == 0 {
 		output.PrintInfo("No listings found")
-		return nil
 	}
 
 	return output.Print(result)
+}
+
+// getOrNewListing fetches the existing listing for a locale. A 404 yields a
+// fresh listing for that locale; any other error is returned as-is.
+func getOrNewListing(client *api.Client, edit *api.Edit, loc string) (*androidpublisher.Listing, error) {
+	existing, err := edit.Listings().Get(client.GetPackageName(), edit.ID(), loc).Context(edit.Context()).Do()
+	if err == nil {
+		return existing, nil
+	}
+	var gErr *googleapi.Error
+	if errors.As(err, &gErr) && gErr.Code == http.StatusNotFound {
+		return &androidpublisher.Listing{Language: loc}, nil
+	}
+	return nil, fmt.Errorf("failed to get listing for locale '%s': %w", loc, err)
 }
 
 func runGet(cmd *cobra.Command, args []string) error {
@@ -155,9 +168,6 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	listing, err := edit.Listings().Get(client.GetPackageName(), edit.ID(), locale).Context(edit.Context()).Do()
 	if err != nil {
@@ -177,6 +187,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if title == "" && shortDesc == "" && fullDesc == "" && fullDescFile == "" {
+		return fmt.Errorf("nothing to update: provide at least one of --title, --short-description, --full-description, or --full-description-file")
+	}
+
 	// Read full description from file if specified
 	desc := fullDesc
 	if fullDescFile != "" {
@@ -184,7 +198,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read description file: %w", err)
 		}
-		desc = string(data)
+		desc = strings.TrimRight(string(data), "\r\n")
 	}
 
 	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)
@@ -201,12 +215,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	ctx := edit.Context()
 
 	// Get existing listing to preserve unchanged fields
-	existing, err := edit.Listings().Get(client.GetPackageName(), edit.ID(), locale).Context(ctx).Do()
+	existing, err := getOrNewListing(client, edit, locale)
 	if err != nil {
-		// If listing doesn't exist, create new
-		existing = &androidpublisher.Listing{
-			Language: locale,
-		}
+		return err
 	}
 
 	// Update fields if provided
@@ -290,28 +301,45 @@ func runSync(cmd *cobra.Command, args []string) error {
 		localeDir := filepath.Join(absDir, entry.Name())
 		localeName := entry.Name()
 
-		listing := &androidpublisher.Listing{
-			Language: localeName,
-		}
+		var newTitle, newShort, newFull *string
 
 		// Read title
 		if data, err := os.ReadFile(filepath.Join(localeDir, "title.txt")); err == nil {
-			listing.Title = string(data)
+			s := strings.TrimSpace(string(data))
+			newTitle = &s
 		}
 
 		// Read short description
 		if data, err := os.ReadFile(filepath.Join(localeDir, "short_description.txt")); err == nil {
-			listing.ShortDescription = string(data)
+			s := strings.TrimSpace(string(data))
+			newShort = &s
 		}
 
 		// Read full description
 		if data, err := os.ReadFile(filepath.Join(localeDir, "full_description.txt")); err == nil {
-			listing.FullDescription = string(data)
+			s := strings.TrimRight(string(data), "\r\n")
+			newFull = &s
 		}
 
-		// Skip if no content
-		if listing.Title == "" && listing.ShortDescription == "" && listing.FullDescription == "" {
+		if newTitle == nil && newShort == nil && newFull == nil {
+			output.PrintWarning("Skipping %s: no title.txt, short_description.txt, or full_description.txt found", localeName)
 			continue
+		}
+
+		// Merge onto the existing listing so absent files leave fields untouched
+		listing, err := getOrNewListing(client, edit, localeName)
+		if err != nil {
+			failures = append(failures, err.Error())
+			continue
+		}
+		if newTitle != nil {
+			listing.Title = *newTitle
+		}
+		if newShort != nil {
+			listing.ShortDescription = *newShort
+		}
+		if newFull != nil {
+			listing.FullDescription = *newFull
 		}
 
 		if cli.IsDryRun() {
@@ -319,7 +347,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		_, err := edit.Listings().Update(client.GetPackageName(), edit.ID(), localeName, listing).Context(ctx).Do()
+		_, err = edit.Listings().Update(client.GetPackageName(), edit.ID(), localeName, listing).Context(ctx).Do()
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", localeName, err))
 			continue

@@ -63,8 +63,9 @@ func init() {
 
 // DeviceTierInfo represents device tier config summary
 type DeviceTierInfo struct {
-	ConfigID   int64 `json:"config_id"`
-	TierGroups int   `json:"tier_groups"`
+	ConfigID     int64 `json:"config_id"`
+	DeviceGroups int   `json:"device_groups"`
+	Tiers        int   `json:"tiers"`
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -80,26 +81,28 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	resp, err := client.Apps().DeviceTierConfigs.List(client.GetPackageName()).Context(ctx).Do()
+	result := make([]DeviceTierInfo, 0)
+	err = client.Apps().DeviceTierConfigs.List(client.GetPackageName()).Pages(ctx,
+		func(resp *androidpublisher.ListDeviceTierConfigsResponse) error {
+			for _, c := range resp.DeviceTierConfigs {
+				tiers := 0
+				if c.DeviceTierSet != nil {
+					tiers = len(c.DeviceTierSet.DeviceTiers)
+				}
+				result = append(result, DeviceTierInfo{
+					ConfigID:     c.DeviceTierConfigId,
+					DeviceGroups: len(c.DeviceGroups),
+					Tiers:        tiers,
+				})
+			}
+			return nil
+		})
 	if err != nil {
 		return fmt.Errorf("failed to list device tier configs: %w", err)
 	}
 
-	if len(resp.DeviceTierConfigs) == 0 {
+	if len(result) == 0 {
 		output.PrintInfo("No device tier configurations found")
-		return nil
-	}
-
-	result := make([]DeviceTierInfo, 0, len(resp.DeviceTierConfigs))
-	for _, c := range resp.DeviceTierConfigs {
-		groups := 0
-		if c.DeviceGroups != nil {
-			groups = len(c.DeviceGroups)
-		}
-		result = append(result, DeviceTierInfo{
-			ConfigID:   c.DeviceTierConfigId,
-			TierGroups: groups,
-		})
 	}
 
 	return output.Print(result)

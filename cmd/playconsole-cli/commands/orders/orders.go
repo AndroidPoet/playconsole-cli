@@ -118,9 +118,14 @@ func runBatchGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ids := strings.Split(orderIDs, ",")
-	for i := range ids {
-		ids[i] = strings.TrimSpace(ids[i])
+	ids := make([]string, 0)
+	for _, id := range strings.Split(orderIDs, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("no order IDs given: --order-ids must contain at least one non-empty ID")
 	}
 
 	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)

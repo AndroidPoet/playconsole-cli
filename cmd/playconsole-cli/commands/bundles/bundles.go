@@ -1,6 +1,7 @@
 package bundles
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,11 +72,11 @@ var (
 func init() {
 	// Upload flags
 	uploadCmd.Flags().StringVar(&filePath, "file", "", "path to AAB file")
-	uploadCmd.Flags().StringVar(&trackName, "track", "", "track to assign (internal, alpha, beta, production)")
+	uploadCmd.Flags().StringVar(&trackName, "track", "", "track to assign (internal, alpha, beta, production); defaults to the .gpc.yaml track")
 	uploadCmd.Flags().BoolVar(&autoCommit, "commit", true, "automatically commit the edit")
 	uploadCmd.Flags().StringVar(&releaseNotes, "release-notes", "", "release notes text")
 	uploadCmd.Flags().StringVar(&releaseNotesLang, "release-notes-lang", "en-US", "release notes language")
-	uploadCmd.Flags().Float64Var(&rolloutPct, "rollout", 100, "rollout percentage (only for production)")
+	uploadCmd.Flags().Float64Var(&rolloutPct, "rollout", 100, "rollout percentage (0-100); below 100 starts a staged rollout")
 	cli.MustMarkFlagRequired(uploadCmd, "file")
 
 	// Find flags
@@ -105,6 +106,12 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
 		return err
 	}
+	if trackName == "" {
+		trackName = cli.DefaultTrack()
+	}
+	if rolloutPct <= 0 || rolloutPct > 100 {
+		return fmt.Errorf("rollout percentage must be greater than 0 and at most 100")
+	}
 
 	// Validate file
 	absPath, err := filepath.Abs(filePath)
@@ -127,7 +134,11 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	}
 
 	if cli.IsDryRun() {
-		output.PrintInfo("Dry run: would upload %s (%d bytes)", absPath, info.Size())
+		if trackName != "" {
+			output.PrintInfo("Dry run: would upload %s (%d bytes) and assign it to track '%s'", absPath, info.Size(), trackName)
+		} else {
+			output.PrintInfo("Dry run: would upload %s (%d bytes)", absPath, info.Size())
+		}
 		return nil
 	}
 
@@ -204,7 +215,8 @@ func runUpload(cmd *cobra.Command, args []string) error {
 		}
 		output.PrintSuccess("Edit committed")
 	} else {
-		output.PrintInfo("Edit ID: %s (not committed, use 'gpc edits commit' to commit)", edit.ID())
+		edit.Keep()
+		output.PrintInfo("Edit ID: %s (not committed, use 'gpc edits commit --edit-id %s' to commit)", edit.ID(), edit.ID())
 	}
 
 	return output.Print(BundleInfo{
@@ -229,9 +241,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	bundles, err := edit.Bundles().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -249,7 +258,6 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(result) == 0 {
 		output.PrintInfo("No bundles found")
-		return nil
 	}
 
 	return output.Print(result)
@@ -270,9 +278,6 @@ func runFind(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	bundles, err := edit.Bundles().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -339,6 +344,12 @@ func runWait(cmd *cobra.Command, args []string) error {
 				SigningKeys:   len(resp.GeneratedApks),
 				GeneratedAPKs: total,
 			})
+		}
+
+		// Auth/permission failures will not resolve by waiting.
+		var gErr *googleapi.Error
+		if errors.As(err, &gErr) && (gErr.Code == 401 || gErr.Code == 403) {
+			return err
 		}
 
 		if time.Now().After(deadline) {

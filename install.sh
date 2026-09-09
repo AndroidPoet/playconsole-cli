@@ -37,6 +37,12 @@ esac
 
 info "Installing playconsole-cli for ${OS}/${ARCH}..."
 
+# Release archives ship the binary as playconsole-cli(.exe on Windows)
+BIN_NAME="playconsole-cli"
+if [ "$OS" = "windows" ]; then
+    BIN_NAME="playconsole-cli.exe"
+fi
+
 # GitHub API headers
 AUTH_HEADER=""
 if [ -n "$GITHUB_TOKEN" ]; then
@@ -86,9 +92,10 @@ if [ -z "$DOWNLOAD_URL" ]; then
     fi
 
     cd playconsole-cli
-    go build -o playconsole-cli ./cmd/playconsole-cli
+    SRC_VERSION=$(git describe --tags --always 2>/dev/null || echo "source")
+    go build -ldflags "-X main.version=${SRC_VERSION}" -o "$BIN_NAME" ./cmd/playconsole-cli
     mkdir -p "$INSTALL_DIR"
-    mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
+    mv "$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
     cd /
     rm -rf "$TMPDIR"
 else
@@ -111,19 +118,26 @@ else
     fi
 
     # Install
+    if [ ! -f "$BIN_NAME" ]; then
+        error "Archive did not contain $BIN_NAME"
+    fi
     mkdir -p "$INSTALL_DIR"
-    mv playconsole-cli "$INSTALL_DIR/playconsole-cli"
+    mv "$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
 
     cd /
     rm -rf "$TMPDIR"
 fi
 
-chmod +x "$INSTALL_DIR/playconsole-cli"
+chmod +x "$INSTALL_DIR/$BIN_NAME"
 
-# Create gpc alias
-ln -sf "$INSTALL_DIR/playconsole-cli" "$INSTALL_DIR/gpc"
+# Create gpc alias (a copy on Windows, where symlinks need elevated rights)
+if [ "$OS" = "windows" ]; then
+    cp -f "$INSTALL_DIR/$BIN_NAME" "$INSTALL_DIR/gpc.exe"
+else
+    ln -sf "$INSTALL_DIR/$BIN_NAME" "$INSTALL_DIR/gpc"
+fi
 
-info "Installed playconsole-cli to $INSTALL_DIR/playconsole-cli"
+info "Installed playconsole-cli to $INSTALL_DIR/$BIN_NAME"
 info "Created alias: gpc -> playconsole-cli"
 
 # Check PATH
@@ -135,10 +149,10 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^$INSTALL_DIR$"; then
 fi
 
 # Verify installation
-if "$INSTALL_DIR/playconsole-cli" version &>/dev/null; then
+if "$INSTALL_DIR/$BIN_NAME" version &>/dev/null; then
     info "Installation complete!"
     echo ""
-    "$INSTALL_DIR/playconsole-cli" version
+    "$INSTALL_DIR/$BIN_NAME" version
 else
-    warn "Installed but could not verify. Try running: $INSTALL_DIR/playconsole-cli --help"
+    warn "Installed but could not verify. Try running: $INSTALL_DIR/$BIN_NAME --help"
 fi

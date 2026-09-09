@@ -89,6 +89,12 @@ func ResolveTimeout(fallback time.Duration) time.Duration {
 	return parsed
 }
 
+// DefaultTrack returns the project-level default track from .gpc.yaml
+// (the "track" key written by `init`), or "" when none is configured.
+func DefaultTrack() string {
+	return viper.GetString("track")
+}
+
 // IsDryRun returns whether dry-run mode is enabled
 func IsDryRun() bool {
 	return dryRun

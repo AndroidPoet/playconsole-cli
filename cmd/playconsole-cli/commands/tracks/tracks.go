@@ -84,7 +84,7 @@ func init() {
 	updateCmd.Flags().StringVar(&trackName, "track", "", "track name")
 	updateCmd.Flags().Int64Var(&versionCode, "version-code", 0, "version code to release")
 	updateCmd.Flags().Int64SliceVar(&versionCodes, "version-codes", nil, "multiple version codes")
-	updateCmd.Flags().Float64Var(&rolloutPercentage, "rollout-percentage", 100, "rollout percentage (0-100)")
+	addRolloutFlag(updateCmd, "rollout percentage (0-100); below 100 implies --status inProgress")
 	updateCmd.Flags().StringVar(&releaseNotes, "release-notes", "", "release notes text")
 	updateCmd.Flags().StringVar(&releaseNotesLang, "release-notes-lang", "en-US", "release notes language")
 	updateCmd.Flags().StringVar(&status, "status", "completed", "release status (draft, inProgress, halted, completed)")
@@ -94,7 +94,7 @@ func init() {
 	promoteCmd.Flags().StringVar(&fromTrack, "from", "", "source track")
 	promoteCmd.Flags().StringVar(&toTrack, "to", "", "destination track")
 	promoteCmd.Flags().Int64Var(&versionCode, "version-code", 0, "specific version code to promote (optional)")
-	promoteCmd.Flags().Float64Var(&rolloutPercentage, "rollout-percentage", 100, "rollout percentage")
+	addRolloutFlag(promoteCmd, "rollout percentage (0-100); below 100 starts a staged rollout")
 	cli.MustMarkFlagRequired(promoteCmd, "from")
 	cli.MustMarkFlagRequired(promoteCmd, "to")
 
@@ -112,6 +112,22 @@ func init() {
 	TracksCmd.AddCommand(promoteCmd)
 	TracksCmd.AddCommand(haltCmd)
 	TracksCmd.AddCommand(completeCmd)
+}
+
+// addRolloutFlag registers --rollout (matching `bundles upload`) and keeps the
+// historical --rollout-percentage spelling as a hidden, deprecated alias.
+func addRolloutFlag(cmd *cobra.Command, usage string) {
+	cmd.Flags().Float64Var(&rolloutPercentage, "rollout", 100, usage)
+	cmd.Flags().Float64Var(&rolloutPercentage, "rollout-percentage", 100, usage)
+	_ = cmd.Flags().MarkDeprecated("rollout-percentage", "use --rollout instead")
+}
+
+// validateRollout checks the --rollout value range.
+func validateRollout() error {
+	if rolloutPercentage <= 0 || rolloutPercentage > 100 {
+		return fmt.Errorf("rollout percentage must be greater than 0 and at most 100")
+	}
+	return nil
 }
 
 // TrackInfo represents track information for output
@@ -138,9 +154,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	tracks, err := edit.Tracks().List(client.GetPackageName(), edit.ID()).Context(edit.Context()).Do()
 	if err != nil {
@@ -188,9 +201,6 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	track, err := edit.Tracks().Get(client.GetPackageName(), edit.ID(), trackName).Context(edit.Context()).Do()
 	if err != nil {
@@ -215,20 +225,29 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate rollout
-	if rolloutPercentage < 0 || rolloutPercentage > 100 {
-		return fmt.Errorf("rollout percentage must be between 0 and 100")
-	}
-
-	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)
-	if err != nil {
+	if err := validateRollout(); err != nil {
 		return err
 	}
 
-	edit, err := client.CreateEdit()
-	if err != nil {
-		return err
+	// A partial rollout only makes sense for a staged release. Infer the
+	// status when the user did not set one explicitly, and reject
+	// contradictory combinations instead of silently shipping to 100%.
+	staged := rolloutPercentage < 100
+	if staged && !cmd.Flags().Changed("status") {
+		status = "inProgress"
 	}
-	defer edit.Close()
+	switch status {
+	case "inProgress", "halted":
+		if !staged {
+			return fmt.Errorf("--status %s requires --rollout below 100", status)
+		}
+	case "completed", "draft":
+		if staged {
+			return fmt.Errorf("--rollout %v cannot be combined with --status %s (use inProgress)", rolloutPercentage, status)
+		}
+	default:
+		return fmt.Errorf("invalid --status %q (draft, inProgress, halted, completed)", status)
+	}
 
 	// Build release
 	release := &androidpublisher.TrackRelease{
@@ -237,7 +256,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Set user fraction for staged rollouts
-	if rolloutPercentage < 100 && status == "inProgress" {
+	if staged {
 		release.UserFraction = rolloutPercentage / 100
 	}
 
@@ -262,6 +281,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return output.Print(trackUpdate)
 	}
 
+	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)
+	if err != nil {
+		return err
+	}
+
+	edit, err := client.CreateEdit()
+	if err != nil {
+		return err
+	}
+	defer edit.Close()
+
 	// Update track
 	updated, err := edit.Tracks().Update(client.GetPackageName(), edit.ID(), trackName, trackUpdate).Context(edit.Context()).Do()
 	if err != nil {
@@ -280,6 +310,12 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 func runPromote(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
 		return err
+	}
+	if err := validateRollout(); err != nil {
+		return err
+	}
+	if fromTrack == toTrack {
+		return fmt.Errorf("--from and --to must be different tracks")
 	}
 
 	client, err := api.NewClient(cli.GetPackageName(), 60*time.Second)
@@ -375,10 +411,15 @@ func runHalt(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update releases to halted
+	halted := 0
 	for _, r := range track.Releases {
 		if r.Status == "inProgress" {
 			r.Status = "halted"
+			halted++
 		}
+	}
+	if halted == 0 {
+		return fmt.Errorf("no in-progress staged rollout on track '%s' to halt", trackName)
 	}
 
 	if cli.IsDryRun() {
@@ -424,11 +465,16 @@ func runComplete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update releases to completed
+	completed := 0
 	for _, r := range track.Releases {
 		if r.Status == "inProgress" || r.Status == "halted" {
 			r.Status = "completed"
 			r.UserFraction = 0 // Remove user fraction for full rollout
+			completed++
 		}
+	}
+	if completed == 0 {
+		return fmt.Errorf("no staged rollout on track '%s' to complete", trackName)
 	}
 
 	if cli.IsDryRun() {

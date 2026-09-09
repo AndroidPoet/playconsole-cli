@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -27,8 +29,7 @@ Image types:
   - wearScreenshots: Wear OS screenshots
   - featureGraphic: Feature graphic (1024x500)
   - icon: App icon (512x512)
-  - tvBanner: TV banner (1280x720)
-  - promoGraphic: Promo graphic (180x120)`,
+  - tvBanner: TV banner (1280x720)`,
 }
 
 var listCmd = &cobra.Command{
@@ -60,6 +61,11 @@ var syncCmd = &cobra.Command{
 	Short: "Sync images from a directory",
 	Long: `Sync images from a directory structure.
 
+Each locale/type directory that contains at least one .png/.jpg/.jpeg file
+replaces all existing images of that type on Google Play. Files are uploaded
+in natural sort order (1.png, 2.png, ..., 10.png). Directories with no usable
+images are skipped, not wiped.
+
 Expected structure:
   screenshots/
     en-US/
@@ -89,7 +95,6 @@ var validImageTypes = []string{
 	"featureGraphic",
 	"icon",
 	"tvBanner",
-	"promoGraphic",
 }
 
 func init() {
@@ -125,6 +130,7 @@ func init() {
 
 	// Sync flags
 	syncCmd.Flags().StringVar(&syncDir, "dir", "", "directory containing images")
+	syncCmd.Flags().Bool("confirm", false, "confirm replacing existing images")
 	cli.MustMarkFlagRequired(syncCmd, "dir")
 
 	ImagesCmd.AddCommand(listCmd)
@@ -151,6 +157,41 @@ func validateImageType(t string) error {
 	return fmt.Errorf("invalid image type '%s'. Valid types: %s", t, strings.Join(validImageTypes, ", "))
 }
 
+// naturalLess compares strings so that embedded numbers sort numerically
+// (1.png, 2.png, 10.png) instead of lexically (1.png, 10.png, 2.png).
+func naturalLess(a, b string) bool {
+	ra, rb := []rune(a), []rune(b)
+	i, j := 0, 0
+	for i < len(ra) && j < len(rb) {
+		if unicode.IsDigit(ra[i]) && unicode.IsDigit(rb[j]) {
+			si := i
+			for i < len(ra) && unicode.IsDigit(ra[i]) {
+				i++
+			}
+			sj := j
+			for j < len(rb) && unicode.IsDigit(rb[j]) {
+				j++
+			}
+			na := strings.TrimLeft(string(ra[si:i]), "0")
+			nb := strings.TrimLeft(string(rb[sj:j]), "0")
+			if len(na) != len(nb) {
+				return len(na) < len(nb)
+			}
+			if na != nb {
+				return na < nb
+			}
+			continue
+		}
+		la, lb := unicode.ToLower(ra[i]), unicode.ToLower(rb[j])
+		if la != lb {
+			return la < lb
+		}
+		i++
+		j++
+	}
+	return len(ra)-i < len(rb)-j
+}
+
 func runList(cmd *cobra.Command, args []string) error {
 	if err := cli.RequirePackage(cmd); err != nil {
 		return err
@@ -170,9 +211,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	images, err := edit.Images().List(client.GetPackageName(), edit.ID(), locale, imageType).Context(edit.Context()).Do()
 	if err != nil {
@@ -191,7 +229,6 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if len(result) == 0 {
 		output.PrintInfo("No images found for %s/%s", locale, imageType)
-		return nil
 	}
 
 	return output.Print(result)
@@ -363,6 +400,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a directory: %s", absDir)
 	}
 
+	if err := cli.CheckConfirm(cmd); err != nil {
+		return fmt.Errorf("sync replaces all existing images for every populated locale/type directory. Use --confirm to proceed")
+	}
+
 	client, err := api.NewClient(cli.GetPackageName(), 5*time.Minute)
 	if err != nil {
 		return err
@@ -428,6 +469,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 				localFiles = append(localFiles, filepath.Join(typeDir, fileEntry.Name()))
 			}
+
+			if len(localFiles) == 0 {
+				output.PrintWarning("Skipping %s/%s: no .png/.jpg/.jpeg files found (existing images left untouched)", localeName, typeName)
+				continue
+			}
+
+			sort.Slice(localFiles, func(i, j int) bool {
+				return naturalLess(filepath.Base(localFiles[i]), filepath.Base(localFiles[j]))
+			})
 
 			if cli.IsDryRun() {
 				output.PrintInfo("Dry run: would replace %s/%s with %d image(s)", localeName, typeName, len(localFiles))

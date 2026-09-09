@@ -47,7 +47,7 @@ func init() {
 
 	updateCmd.Flags().StringVar(&track, "track", "production", "release track")
 	updateCmd.Flags().StringVar(&countries, "countries", "", "comma-separated country codes (e.g., US,GB,DE)")
-	updateCmd.Flags().BoolVar(&includeRest, "include-rest", true, "include rest of world")
+	updateCmd.Flags().BoolVar(&includeRest, "include-rest", false, "include rest of world")
 	updateCmd.Flags().Bool("confirm", false, "confirm destructive operation")
 	cli.MustMarkFlagRequired(updateCmd, "countries")
 
@@ -61,6 +61,23 @@ type CountryInfo struct {
 	Countries      []string `json:"countries,omitempty"`
 	IncludeRest    bool     `json:"include_rest_of_world"`
 	ReleaseVersion string   `json:"release_version,omitempty"`
+}
+
+// selectRelease picks the release whose country targeting is shown or
+// updated: the in-progress rollout if any, else the completed release,
+// else the first release on the track.
+func selectRelease(releases []*androidpublisher.TrackRelease) *androidpublisher.TrackRelease {
+	if len(releases) == 0 {
+		return nil
+	}
+	for _, status := range []string{"inProgress", "completed"} {
+		for _, r := range releases {
+			if r.Status == status {
+				return r
+			}
+		}
+	}
+	return releases[0]
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -79,9 +96,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer edit.Close()
-	defer func() {
-		_ = edit.Delete()
-	}()
 
 	trackResp, err := edit.Tracks().Get(
 		client.GetPackageName(), edit.ID(), track,
@@ -94,17 +108,14 @@ func runList(cmd *cobra.Command, args []string) error {
 		Track: track,
 	}
 
-	if len(trackResp.Releases) > 0 {
-		latest := trackResp.Releases[0]
-		if latest.CountryTargeting != nil {
-			info.Countries = latest.CountryTargeting.Countries
-			info.IncludeRest = latest.CountryTargeting.IncludeRestOfWorld
+	if release := selectRelease(trackResp.Releases); release != nil {
+		if release.CountryTargeting != nil {
+			info.Countries = release.CountryTargeting.Countries
+			info.IncludeRest = release.CountryTargeting.IncludeRestOfWorld
 		}
-		if len(latest.VersionCodes) > 0 {
-			info.ReleaseVersion = fmt.Sprintf("%d", latest.VersionCodes[0])
-		}
-		if latest.Name != "" {
-			info.ReleaseVersion = latest.Name
+		info.ReleaseVersion = release.Name
+		if info.ReleaseVersion == "" && len(release.VersionCodes) > 0 {
+			info.ReleaseVersion = fmt.Sprintf("%d", release.VersionCodes[0])
 		}
 	}
 
@@ -151,16 +162,15 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get track '%s': %w", track, err)
 	}
 
-	if len(trackResp.Releases) == 0 {
+	release := selectRelease(trackResp.Releases)
+	if release == nil {
 		return fmt.Errorf("no releases found on track '%s'", track)
 	}
 
-	// Update country targeting on latest release
-	for _, release := range trackResp.Releases {
-		release.CountryTargeting = &androidpublisher.CountryTargeting{
-			Countries:          countryCodes,
-			IncludeRestOfWorld: includeRest,
-		}
+	// Update country targeting on the selected release only
+	release.CountryTargeting = &androidpublisher.CountryTargeting{
+		Countries:          countryCodes,
+		IncludeRestOfWorld: includeRest,
 	}
 
 	// Update track

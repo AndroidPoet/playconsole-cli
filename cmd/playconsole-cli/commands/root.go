@@ -60,11 +60,15 @@ Design Philosophy:
 			}
 		}
 
-		// Sync flags to cli package
+		// Sync flags to cli package. Values are read through viper so that
+		// flag > env (GPC_*) > .gpc.yaml precedence applies uniformly.
 		cli.SetPackageName(packageName)
 		cli.SetProfile(profile)
-		if cmd.Flags().Changed("timeout") || os.Getenv("GPC_TIMEOUT") != "" {
-			cli.SetTimeout(timeout)
+		// Only an explicit override (flag, env, or project config) replaces the
+		// per-command fallback timeouts. Look at the root persistent flag rather
+		// than cmd.Flags(): some subcommands define their own local --timeout.
+		if cmd.Root().PersistentFlags().Lookup("timeout").Changed || os.Getenv("GPC_TIMEOUT") != "" || viper.InConfig("timeout") {
+			cli.SetTimeout(viper.GetString("timeout"))
 		} else {
 			cli.SetTimeout("")
 		}
@@ -76,10 +80,10 @@ Design Philosophy:
 		}
 
 		// Setup output formatter
-		output.Setup(outputFmt, prettyPrint, quiet)
+		output.Setup(viper.GetString("output"), prettyPrint, quiet)
 
 		// Set debug mode
-		if debug {
+		if viper.GetBool("debug") {
 			config.SetDebug(true)
 		}
 

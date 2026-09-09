@@ -140,23 +140,38 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	subs, err := client.Monetization().Subscriptions.List(client.GetPackageName()).Context(ctx).Do()
-	if err != nil {
-		return err
-	}
+	result := make([]SubscriptionInfo, 0)
+	pageToken := ""
+	for {
+		call := client.Monetization().Subscriptions.List(client.GetPackageName()).Context(ctx)
+		if maxResults > 0 {
+			call = call.PageSize(maxResults)
+		}
+		if pageToken != "" {
+			call = call.PageToken(pageToken)
+		}
 
-	result := make([]SubscriptionInfo, 0, len(subs.Subscriptions))
-	for _, s := range subs.Subscriptions {
-		result = append(result, SubscriptionInfo{
-			ProductID:   s.ProductId,
-			BasePlans:   len(s.BasePlans),
-			PackageName: s.PackageName,
-		})
+		subs, err := call.Do()
+		if err != nil {
+			return err
+		}
+
+		for _, s := range subs.Subscriptions {
+			result = append(result, SubscriptionInfo{
+				ProductID:   s.ProductId,
+				BasePlans:   len(s.BasePlans),
+				PackageName: s.PackageName,
+			})
+		}
+
+		if subs.NextPageToken == "" {
+			break
+		}
+		pageToken = subs.NextPageToken
 	}
 
 	if len(result) == 0 {
 		output.PrintInfo("No subscriptions found")
-		return nil
 	}
 
 	return output.Print(result)
@@ -241,15 +256,10 @@ func runBasePlansList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if len(sub.BasePlans) == 0 {
-		output.PrintInfo("No base plans found for subscription '%s'", productID)
-		return nil
-	}
-
 	type BasePlanInfo struct {
 		BasePlanID string `json:"base_plan_id"`
 		State      string `json:"state"`
-		Offers     int    `json:"offers"`
+		OfferTags  int    `json:"offer_tags"`
 	}
 
 	result := make([]BasePlanInfo, 0, len(sub.BasePlans))
@@ -257,8 +267,12 @@ func runBasePlansList(cmd *cobra.Command, args []string) error {
 		result = append(result, BasePlanInfo{
 			BasePlanID: bp.BasePlanId,
 			State:      bp.State,
-			Offers:     len(bp.OfferTags),
+			OfferTags:  len(bp.OfferTags),
 		})
+	}
+
+	if len(result) == 0 {
+		output.PrintInfo("No base plans found for subscription '%s'", productID)
 	}
 
 	return output.Print(result)

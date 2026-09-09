@@ -1,8 +1,10 @@
 package doctor
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -20,14 +22,15 @@ var DoctorCmd = &cobra.Command{
 	Long: `Run diagnostic checks to verify your playconsole-cli setup.
 
 Checks configuration, credentials, API connectivity, and permissions
-to help troubleshoot common issues.`,
+to help troubleshoot common issues. Honors the global --config, --profile
+and --package flags, so you can verify exactly the setup a command would use.`,
 	RunE: runDoctor,
 }
 
 var verbose bool
 
 func init() {
-	DoctorCmd.Flags().BoolVar(&verbose, "verbose", false, "show detailed check output")
+	DoctorCmd.Flags().BoolVar(&verbose, "verbose", false, "include details (paths, identities, latency) in each check")
 }
 
 // CheckResult represents a single diagnostic check
@@ -35,6 +38,7 @@ type CheckResult struct {
 	Check   string `json:"check"`
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
@@ -52,7 +56,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// 4. Package name
 	results = append(results, checkPackageName())
 
-	// 5. Android Publisher API
+	// 5/6. API connectivity
 	pkgName := cli.GetPackageName()
 	if pkgName != "" {
 		results = append(results, checkPublisherAPI(pkgName))
@@ -70,16 +74,23 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	// Strip details unless asked for them
+	if !verbose {
+		for i := range results {
+			results[i].Detail = ""
+		}
+	}
+
 	// Print summary
-	passed := 0
-	failed := 0
-	skipped := 0
+	passed, failed, warned, skipped := 0, 0, 0, 0
 	for _, r := range results {
 		switch r.Status {
 		case "pass":
 			passed++
 		case "fail":
 			failed++
+		case "warn":
+			warned++
 		case "skip":
 			skipped++
 		}
@@ -89,7 +100,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	output.PrintInfo("\n%d passed, %d failed, %d skipped", passed, failed, skipped)
+	output.PrintInfo("%d passed, %d failed, %d warnings, %d skipped", passed, failed, warned, skipped)
 
 	if failed > 0 {
 		return fmt.Errorf("%d check(s) failed", failed)
@@ -98,19 +109,43 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// checkConfig reports on the configuration that was already loaded for this
+// invocation (respecting --config / --profile), rather than re-loading defaults.
 func checkConfig() CheckResult {
-	err := config.Init("", "")
-	if err != nil {
+	path := config.GetConfigPath()
+	profile := config.GetProfile()
+	profileName := ""
+	if profile != nil {
+		profileName = profile.Name
+	}
+	detail := fmt.Sprintf("config=%s profile=%s", path, profileName)
+
+	if _, err := os.Stat(path); err != nil {
 		return CheckResult{
 			Check:   "Configuration",
-			Status:  "fail",
-			Message: fmt.Sprintf("config error: %v", err),
+			Status:  "warn",
+			Message: fmt.Sprintf("no config file at %s (using flags/env only)", path),
+			Detail:  detail,
 		}
 	}
+
+	cfg := config.GetConfig()
+	if cfg != nil {
+		if _, ok := cfg.Profiles[profileName]; !ok && profileName != "" {
+			return CheckResult{
+				Check:   "Configuration",
+				Status:  "warn",
+				Message: fmt.Sprintf("profile '%s' not found in %s (using env credentials if set)", profileName, path),
+				Detail:  detail,
+			}
+		}
+	}
+
 	return CheckResult{
 		Check:   "Configuration",
 		Status:  "pass",
-		Message: "config loaded successfully",
+		Message: fmt.Sprintf("config loaded, profile '%s'", profileName),
+		Detail:  detail,
 	}
 }
 
@@ -130,10 +165,21 @@ func checkCredentials() CheckResult {
 			Message: "credentials file is empty",
 		}
 	}
+
+	source := "unknown"
+	if p := config.GetProfile(); p != nil {
+		switch {
+		case p.CredentialsB64 != "":
+			source = fmt.Sprintf("base64 (%d bytes decoded)", len(creds))
+		case p.CredentialsPath != "":
+			source = "file " + p.CredentialsPath
+		}
+	}
 	return CheckResult{
 		Check:   "Credentials",
 		Status:  "pass",
 		Message: "credentials available",
+		Detail:  source,
 	}
 }
 
@@ -152,8 +198,17 @@ func checkServiceAccount() CheckResult {
 		ProjectID    string `json:"project_id"`
 		ClientEmail  string `json:"client_email"`
 		PrivateKeyID string `json:"private_key_id"`
+		PrivateKey   string `json:"private_key"`
 	}
 	if err := json.Unmarshal(creds, &sa); err != nil {
+		// A common mistake is base64-encoding twice; give a targeted hint.
+		if _, b64Err := base64.StdEncoding.DecodeString(string(creds)); b64Err == nil {
+			return CheckResult{
+				Check:   "Service Account",
+				Status:  "fail",
+				Message: "credentials are base64 text, not JSON (encoded twice?)",
+			}
+		}
 		return CheckResult{
 			Check:   "Service Account",
 			Status:  "fail",
@@ -168,12 +223,19 @@ func checkServiceAccount() CheckResult {
 			Message: fmt.Sprintf("unexpected type '%s', expected 'service_account'", sa.Type),
 		}
 	}
+	if sa.ClientEmail == "" || sa.PrivateKey == "" {
+		return CheckResult{
+			Check:   "Service Account",
+			Status:  "fail",
+			Message: "service account JSON is missing client_email or private_key",
+		}
+	}
 
-	msg := fmt.Sprintf("project=%s email=%s", sa.ProjectID, sa.ClientEmail)
 	return CheckResult{
 		Check:   "Service Account",
 		Status:  "pass",
-		Message: msg,
+		Message: fmt.Sprintf("project=%s email=%s", sa.ProjectID, sa.ClientEmail),
+		Detail:  "key_id=" + sa.PrivateKeyID,
 	}
 }
 
@@ -183,7 +245,7 @@ func checkPackageName() CheckResult {
 		return CheckResult{
 			Check:   "Package Name",
 			Status:  "warn",
-			Message: "no package name set (use --package or GPC_PACKAGE env)",
+			Message: "no package name set (use --package, GPC_PACKAGE, or a profile default)",
 		}
 	}
 	return CheckResult{
@@ -203,26 +265,30 @@ func checkPublisherAPI(packageName string) CheckResult {
 		}
 	}
 
-	ctx, cancel := client.Context()
-	defer cancel()
-
-	// Try to create and immediately delete an edit as a connectivity test
-	edit, err := client.Edits().Insert(packageName, nil).Context(ctx).Do()
+	// Creating (and discarding) an edit exercises auth and package access.
+	started := time.Now()
+	edit, err := client.CreateEdit()
 	if err != nil {
+		if apiErr := api.ParseAPIEnablementError(err); apiErr != nil {
+			return CheckResult{
+				Check:   "Android Publisher API",
+				Status:  "fail",
+				Message: fmt.Sprintf("API not enabled in project %s; enable it at %s", apiErr.ProjectID, apiErr.ActivationURL),
+			}
+		}
 		return CheckResult{
 			Check:   "Android Publisher API",
 			Status:  "fail",
 			Message: fmt.Sprintf("API call failed: %v", err),
 		}
 	}
-
-	// Clean up the test edit
-	_ = client.Edits().Delete(packageName, edit.Id).Context(ctx).Do()
+	edit.Close()
 
 	return CheckResult{
 		Check:   "Android Publisher API",
 		Status:  "pass",
 		Message: "API is reachable and authenticated",
+		Detail:  fmt.Sprintf("edit create+delete round-trip %s", time.Since(started).Round(time.Millisecond)),
 	}
 }
 
@@ -239,11 +305,17 @@ func checkReportingAPI(packageName string) CheckResult {
 	ctx, cancel := client.Context()
 	defer cancel()
 
-	// Try a lightweight API call
-	appName := client.AppName()
-	crashRateName := fmt.Sprintf("%s/crashRateMetricSet", appName)
+	started := time.Now()
+	crashRateName := fmt.Sprintf("%s/crashRateMetricSet", client.AppName())
 	_, err = client.Vitals().Crashrate.Get(crashRateName).Context(ctx).Do()
 	if err != nil {
+		if apiErr := api.ParseAPIEnablementError(err); apiErr != nil {
+			return CheckResult{
+				Check:   "Reporting API",
+				Status:  "fail",
+				Message: fmt.Sprintf("API not enabled in project %s; enable it at %s", apiErr.ProjectID, apiErr.ActivationURL),
+			}
+		}
 		return CheckResult{
 			Check:   "Reporting API",
 			Status:  "fail",
@@ -255,5 +327,6 @@ func checkReportingAPI(packageName string) CheckResult {
 		Check:   "Reporting API",
 		Status:  "pass",
 		Message: "API is reachable and authenticated",
+		Detail:  fmt.Sprintf("crash rate metric-set lookup %s", time.Since(started).Round(time.Millisecond)),
 	}
 }
