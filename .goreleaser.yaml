@@ -115,5 +115,5 @@ release:
     ```
     Or use the install script:
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/master/install.sh | bash
     ```

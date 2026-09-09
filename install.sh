@@ -1,6 +1,6 @@
 #!/bin/bash
 # playconsole-cli - Google Play Console CLI installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/master/install.sh | bash
 
 set -e
 

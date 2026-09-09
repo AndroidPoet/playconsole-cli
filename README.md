@@ -45,7 +45,7 @@ gpc bundles upload --file app.aab --track production
 brew tap AndroidPoet/tap && brew install playconsole-cli
 
 # Install script (Linux/macOS)
-curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/master/install.sh | bash
 
 # Build from source
 git clone https://github.com/AndroidPoet/playconsole-cli.git
@@ -227,7 +227,7 @@ jobs:
 
       - name: Install GPC
         run: |
-          curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.sh | bash
+          curl -fsSL https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/master/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Deploy
