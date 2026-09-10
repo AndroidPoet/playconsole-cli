@@ -57,7 +57,7 @@ cd playconsole-cli && make build
 From PowerShell, install the latest pre-built release for your Windows architecture:
 
 ```powershell
-irm https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/AndroidPoet/playconsole-cli/master/install.ps1 | iex
 ```
 
 The installer places `playconsole-cli.exe` and the `gpc.exe` alias in
