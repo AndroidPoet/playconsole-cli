@@ -85,7 +85,7 @@ chmod 600 ~/.config/gpc/service-account.json
 
 **2. Enable the API** → [Enable Google Play Android Developer API](https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com)
 
-**3. Grant access** in [Play Console API Settings](https://play.google.com/console/developers/api-access)
+**3. Grant access** in [Play Console → Users and permissions](https://play.google.com/console/developers/users-and-permissions): invite the service account email as a user and give it access to your apps. (The old "API access" page no longer exists.)
 
 **4. Configure & verify**
 ```bash

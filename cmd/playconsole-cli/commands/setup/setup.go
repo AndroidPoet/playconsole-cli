@@ -58,10 +58,10 @@ var setupSteps = []step{
 		action:      "Click your service account → Keys tab → Add Key → JSON → Download",
 	},
 	{
-		title:       "Link in Play Console",
-		description: "Grant API access to your service account",
-		url:         "https://play.google.com/console/developers/api-access",
-		action:      "Link your Cloud project, find the service account, click 'Grant access'",
+		title:       "Invite in Play Console",
+		description: "Invite your service account as a Play Console user",
+		url:         "https://play.google.com/console/developers/users-and-permissions",
+		action:      "Invite new users → paste the service account email → grant app access and permissions → Invite user",
 	},
 }
 
@@ -599,7 +599,7 @@ func runAutoSetup(cmd *cobra.Command) {
 
 step5:
 	// --- Step 5: Manual — Grant access in Play Console ---
-	playConsoleURL := "https://play.google.com/console/developers/api-access"
+	playConsoleURL := "https://play.google.com/console/developers/users-and-permissions"
 	fmt.Println()
 	fmt.Println("==> [5/5] Grant access in Play Console")
 	fmt.Println()
@@ -607,9 +607,9 @@ step5:
 	fmt.Println("    Opening Play Console now...")
 	fmt.Println()
 	fmt.Println("    Just do this:")
-	fmt.Println("      1. Click \"Link\" next to your Cloud project")
-	fmt.Printf("      2. Find: %s\n", saEmail)
-	fmt.Println("      3. Click \"Grant access\" → set permissions → \"Invite user\"")
+	fmt.Println("      1. Click \"Invite new users\"")
+	fmt.Printf("      2. Paste: %s\n", saEmail)
+	fmt.Println("      3. Grant app access and permissions → \"Invite user\"")
 	fmt.Println()
 	if err := copyToClipboard(saEmail); err != nil {
 		fmt.Printf("    Warning: could not copy service account email: %v\n", err)
