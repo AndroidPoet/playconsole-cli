@@ -301,7 +301,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	result, err := client.Monetization().Onetimeproducts.Patch(client.GetPackageName(), productID, product).
 		AllowMissing(true).
 		UpdateMask(mask).
-		RegionsVersionVersion("2022/02").
+		RegionsVersionVersion("2026/01").
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -366,7 +366,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	result, err := client.Monetization().Onetimeproducts.Patch(client.GetPackageName(), productID, product).
 		UpdateMask(mask).
-		RegionsVersionVersion("2022/02").
+		RegionsVersionVersion("2026/01").
 		Context(ctx).
 		Do()
 	if err != nil {
